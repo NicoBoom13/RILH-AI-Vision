@@ -29,13 +29,29 @@ from ultralytics import YOLO
 PERSON_CLASS = 0
 PUCK_CLASS = 32
 
+# All model weights are kept under models/ so repo root stays clean and the
+# ultralytics auto-download lands in a predictable location.
+MODELS_DIR = Path("models")
+
+
+def resolve_model_path(name: str) -> Path:
+    """Bare YOLO filenames (e.g. 'yolo11m.pt') are rewritten to models/<name>
+    so ultralytics auto-downloads into models/ instead of CWD. Paths that
+    already include a directory component are used verbatim."""
+    p = Path(name)
+    if len(p.parts) == 1:
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        return MODELS_DIR / p.name
+    return p
+
+
 # --- HockeyAI backend ---------------------------------------------------------
 
 HOCKEY_MODEL_URL = (
     "https://huggingface.co/SimulaMet-HOST/HockeyAI/resolve/main/"
     "HockeyAI_model_weight.pt"
 )
-HOCKEY_MODEL_PATH = Path("models/HockeyAI_model_weight.pt")
+HOCKEY_MODEL_PATH = MODELS_DIR / "HockeyAI_model_weight.pt"
 
 # Native HockeyAI class IDs → (remapped class_id for Phase 2, readable label)
 # Dropped classes (Center Ice 0, Faceoff Dots 1, Goal Frame 2, Referee 6) are
@@ -205,7 +221,7 @@ def main():
     if args.hockey_model:
         model_name = str(ensure_hockey_model())
     else:
-        model_name = args.model
+        model_name = str(resolve_model_path(args.model))
 
     run(
         Path(args.video), Path(args.output), model_name,
