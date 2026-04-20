@@ -24,7 +24,7 @@ See `CLAUDE.md` for the full test log, design decisions, and open blockers.
 - **`src/phase6_annotate.py`** — viz with `#NN`/`#??` labels + green/blue team boxes.
 - **`configs/bytetrack_tuned.yaml`** — longer-memory ByteTrack config.
 - **`configs/botsort_reid.yaml`** — BoT-SORT with GMC + ReID (appearance).
-- **`scripts/phase3_transfer_test.py`** — throwaway sanity check for the HockeyRink pretrained keypoint model (showed that transfer to roller fails; kept for reproducibility).
+- **`src/phase3_transfer_test.py`** — throwaway sanity check for the HockeyRink pretrained keypoint model (showed that transfer to roller fails; kept for reproducibility).
 
 ## Setup
 
