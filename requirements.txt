@@ -2,3 +2,4 @@ ultralytics>=8.3.0
 supervision>=0.25.0
 opencv-python>=4.10.0
 numpy>=1.26.0
+lap>=0.5.12
