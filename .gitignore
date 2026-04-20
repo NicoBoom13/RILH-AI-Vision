@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Project outputs
+runs/
+*.pt
+*.onnx
+
+# Videos (don't commit)
+*.mp4
+*.mov
+*.avi
+*.mkv
+videos/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
