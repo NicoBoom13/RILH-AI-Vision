@@ -2,10 +2,29 @@
 
 **Roller Inline Hockey — AI Vision.** Open-source computer-vision pipeline: automatic match recording, broadcast-style virtual follow-cam, and post-match analytics. Built from open-source modules + custom code only.
 
-## Phases delivered here
+## Status by phase
 
-- **Phase 1** — `src/phase1_detect_track.py` — detects + tracks players and puck on a match video, exports an annotated MP4 and a `tracks.json`. Two backends: **YOLO11 COCO** (default, fast, weak on puck) or **HockeyAI** via `--hockey-model` (ice-hockey-trained YOLOv8m, auto-downloaded, dramatically better on puck — see "Puck detection" below).
-- **Phase 2** — `src/phase2_followcam.py` — reads the tracks, computes a smooth virtual camera trajectory, and crops a 16:9 broadcast-style follow-cam window from the source video.
+| Phase | Module | Status | Notes |
+|-------|--------|--------|-------|
+| 1 — Detect & track | `src/phase1_detect_track.py` | ✅ | Dual backend (COCO YOLO11 or HockeyAI), configurable tracker (ByteTrack / BoT-SORT+ReID). |
+| 2 — Follow-cam | `src/phase2_followcam.py` | ✅ | Works; not heavily iterated on. |
+| 3 — Rink calibration | — | ❌ deferred | HockeyRink ice-hockey model doesn't transfer to roller rinks. Needs 200–300 annotated frames to fine-tune. |
+| 4 — Roller fine-tune | — | ⏳ later | HockeyAI covers 43% puck coverage OOB; fine-tune when needed. |
+| 5 — Event detection | — | ⏳ later | Not started. |
+| 6 — Player identification | `src/phase6_identify.py` + `src/phase6_annotate.py` | 🟡 partial | PARSeq dorsal OCR + team color clustering + track merging. Limited by tracker fragmentation (next: post-hoc Re-ID clustering). |
+| 7 — Web platform | — | ⏳ later | Not started. |
+
+See `CLAUDE.md` for the full test log, design decisions, and open blockers.
+
+## Scripts
+
+- **`src/phase1_detect_track.py`** — Phase 1 detection + tracking.
+- **`src/phase2_followcam.py`** — Phase 2 virtual follow-cam.
+- **`src/phase6_identify.py`** — Phase 6 jersey-number OCR (PARSeq) on tracked players.
+- **`src/phase6_annotate.py`** — viz with `#NN`/`#??` labels + green/blue team boxes.
+- **`configs/bytetrack_tuned.yaml`** — longer-memory ByteTrack config.
+- **`configs/botsort_reid.yaml`** — BoT-SORT with GMC + ReID (appearance).
+- **`scripts/phase3_transfer_test.py`** — throwaway sanity check for the HockeyRink pretrained keypoint model (showed that transfer to roller fails; kept for reproducibility).
 
 ## Setup
 
@@ -38,8 +57,30 @@ Outputs:
 Useful flags:
 - `--hockey-model` — use HockeyAI (YOLOv8m fine-tuned on ice hockey) instead of COCO YOLO11. Auto-downloads the weights to `models/` on first run. See "Puck detection" section.
 - `--model yolo11n.pt` (faster) | `yolo11m.pt` (default) | `yolo11x.pt` (best, slowest) — only used when `--hockey-model` is not set.
+- `--tracker bytetrack.yaml` (default) | `configs/bytetrack_tuned.yaml` | `configs/botsort_reid.yaml` — choose the tracker backend. See "Tracking stability" below.
 - `--conf 0.3` — detection confidence threshold (lower = more detections including false positives)
 - `--imgsz 1280` — inference resolution; helps small-object detection (still useful even with HockeyAI)
+
+### Phase 6 — Player identification
+
+```bash
+# 1) run OCR on the tracks produced by Phase 1 (HockeyAI strongly recommended)
+python src/phase6_identify.py runs/match01/tracks.json path/to/match.mp4 \
+  --output runs/match01/tracks_identified.json --samples-per-track 15
+
+# 2) render the annotated video (#NN / #?? labels, green/blue team boxes)
+python src/phase6_annotate.py runs/match01/tracks.json runs/match01/tracks_identified.json path/to/match.mp4 \
+  --output runs/match01/annotated_numbered.mp4
+```
+
+Pipeline: YOLO11-pose → filter back-facing samples → torso-back crop → PARSeq digit OCR → per-track majority vote → merge tracks with the same number + non-overlapping time spans.
+
+Tunables for `phase6_identify.py`:
+- `--samples-per-track` — default 15. Raise if tracks are long-lived and OCR coverage is too low.
+- `--ocr-min-conf` — default 0.4. Lower to widen coverage at the cost of more false positives.
+- `--pose-model` — default `yolo11n-pose.pt` (auto-downloaded into `models/`).
+
+On `test08` (HockeyAI tracks from a 60s clip), 52/433 tracks were identified (12%), and 11 player identities emerged from number-based track merging. Coverage is currently gated by tracker fragmentation — see "Tracking stability" below.
 
 ### Phase 2 — Virtual follow-cam
 
@@ -86,12 +127,26 @@ Even with HockeyAI, the puck is missed in ~57% of frames. Phase 2 handles this w
 
 For near-perfect puck tracking, a roller-specific fine-tune is the next step (Phase 4 of the roadmap — see `CLAUDE.md`).
 
+## Tracking stability
+
+With 12 real entities on a roller rink (2 × 5 skaters + 2 goalies + 1 puck), the default ByteTrack tracker produces 300–450 track IDs per 60s clip because occlusions and camera cuts break identity. Two off-the-shelf mitigations are plumbed in via `--tracker`:
+
+| Tracker | 60s clip result | When to use |
+|---------|----------------|-------------|
+| `bytetrack.yaml` (default) | ~433 tracks | Fast iteration, baseline. |
+| `configs/bytetrack_tuned.yaml` | ~312 tracks | Longer memory (3s buffer) + more permissive matching. Same speed. |
+| `configs/botsort_reid.yaml` | ~349 tracks, longest = 10.7s | BoT-SORT + GMC (camera-motion compensation) + ReID (appearance from YOLO backbone). Makes individual tracks longer even when total count isn't much lower. |
+
+**None of these hit the ideal ~12 entities.** The planned next step (not implemented) is a post-hoc Re-ID clustering pass under a hard team constraint (max 5 skaters + goalie per team). Phase 6's number-based merging already recovers 11 player identities across broken tracks — see `CLAUDE.md` for the full breakdown.
+
 ## Workflow tips
 
 - Trim to a 60-second test clip first: `ffmpeg -i full_match.mp4 -ss 0 -t 60 -c copy clip.mp4`
-- Iterate Phase 2 parameters on a single Phase 1 run — you don't need to re-detect each time
+- Iterate Phase 2/6 parameters on a single Phase 1 run — you don't need to re-detect each time
 - Open `tracks.json` to inspect the data structure for custom analytics
 - The `--debug-overlay` output is your best friend for understanding why the camera moves the way it does
+- Always pass `python -u` for long runs — stdout is block-buffered by default, which makes progress invisible
+- Outputs are kept incrementally: `runs/test01/`, `runs/test02/`, … never overwrite a previous run, even if it failed
 
 ## Roadmap
 

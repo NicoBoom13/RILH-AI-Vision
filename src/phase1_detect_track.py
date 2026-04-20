@@ -81,6 +81,7 @@ def run(
     conf: float,
     imgsz: int,
     hockey_mode: bool,
+    tracker: str,
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated.mp4"
@@ -98,6 +99,7 @@ def run(
     print(f"Video: {width}x{height} @ {fps:.2f}fps, {total_frames} frames")
     print(f"Backend: {'HockeyAI' if hockey_mode else 'YOLO11 COCO'}")
     print(f"Model: {model_name}, conf={conf}, imgsz={imgsz}")
+    print(f"Tracker: {tracker}")
 
     model = YOLO(model_name)
 
@@ -118,7 +120,7 @@ def run(
     results = model.track(
         source=str(video_path),
         persist=True,
-        tracker="bytetrack.yaml",
+        tracker=tracker,
         conf=conf,
         imgsz=imgsz,
         classes=native_classes,
@@ -197,6 +199,7 @@ def run(
             "total_frames": frame_idx,
             "model": model_name,
             "backend": "hockeyai" if hockey_mode else "coco",
+            "tracker": tracker,
             "frames": all_frames,
         }, f)
 
@@ -213,6 +216,9 @@ def main():
                         help="YOLO model (COCO mode only). Ignored when --hockey-model is set.")
     parser.add_argument("--hockey-model", action="store_true",
                         help="Use HockeyAI (YOLOv8m fine-tuned on ice hockey) instead of COCO YOLO11.")
+    parser.add_argument("--tracker", type=str, default="bytetrack.yaml",
+                        help="Tracker config: bytetrack.yaml (default), botsort.yaml, "
+                             "or a path to a custom YAML (e.g. configs/botsort_reid.yaml).")
     parser.add_argument("--conf", type=float, default=0.3, help="Detection confidence threshold")
     parser.add_argument("--imgsz", type=int, default=1280,
                         help="Inference image size — bigger helps puck detection")
@@ -226,6 +232,7 @@ def main():
     run(
         Path(args.video), Path(args.output), model_name,
         args.conf, args.imgsz, hockey_mode=args.hockey_model,
+        tracker=args.tracker,
     )
 
 

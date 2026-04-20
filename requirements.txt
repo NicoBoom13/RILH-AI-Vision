@@ -3,3 +3,8 @@ supervision>=0.25.0
 opencv-python>=4.10.0
 numpy>=1.26.0
 lap>=0.5.12
+
+# Phase 6 — player identification (PARSeq via torch.hub)
+pytorch_lightning>=2.0
+timm>=0.9
+nltk>=3.8

@@ -1,0 +1,16 @@
+tracker_type: botsort
+track_high_thresh: 0.25
+track_low_thresh: 0.1
+new_track_thresh: 0.25
+track_buffer: 180        # same longer memory as the tuned ByteTrack
+match_thresh: 0.9
+fuse_score: True
+
+# BoT-SORT specifics
+gmc_method: sparseOptFlow  # compensates for camera motion (crucial here)
+
+# ReID — uses YOLO detector backbone features when model=auto
+proximity_thresh: 0.5
+appearance_thresh: 0.7     # slightly relaxed to allow more re-identifications
+with_reid: True
+model: auto
