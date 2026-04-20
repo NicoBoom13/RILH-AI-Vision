@@ -169,7 +169,9 @@ what differs from the immediate predecessor.
   always use `python -u` for long runs.
 - **test02 — Phase 1 COCO yolo11n baseline (clip60-2).** 63,224 person dets,
   1804 track IDs, only 2 puck frames out of 3360 (0.1%). Quantifies the
-  baseline weakness that motivated HockeyAI adoption.
+  baseline weakness that motivated HockeyAI adoption. **Note: ran on
+  `yolo11n.pt` (nano) for speed, not `yolo11x.pt` (best quality). If the
+  COCO path is ever revisited for a fair comparison, re-run with `yolo11x`.**
 - **test01 — Phase 1 first-ever run (clip60).** Crashed at ~35% of frames:
   `supervision >=0.27` requires `tracker_id` on the `Detections` object
   itself, not just as a local variable. Fixed in `phase1_detect_track.py`
