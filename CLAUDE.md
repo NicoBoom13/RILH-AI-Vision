@@ -74,9 +74,13 @@ cinematography, identification, and analytics without re-running inference.
 
 ### Detector backends (Phase 1)
 Two detector backends, selectable at runtime in `phase1_detect_track.py`:
-- Default — **YOLO11 pretrained on COCO**, classes 0 (person) and 32
-  (sports ball). Player detection is solid; puck detection via "sports ball"
-  is unreliable (<1% of frames on roller).
+- Default — **COCO-pretrained YOLO**, classes 0 (person) and 32 (sports ball).
+  Player detection is solid; puck detection via "sports ball" is unreliable
+  (<1% of frames on roller). Weights are chosen via `--model`:
+  - `yolo11n.pt` / `yolo11m.pt` (default) / `yolo11x.pt`
+  - `yolo26l.pt` — YOLO26 large (~51 MB, released January 2026). Newer
+    architecture, stronger than YOLO11m on COCO benchmarks. Auto-downloaded
+    on first use. Still doesn't solve the puck class — that needs HockeyAI.
 - `--hockey-model` — **[HockeyAI](https://huggingface.co/SimulaMet-HOST/HockeyAI)**,
   a YOLOv8m fine-tuned on ice hockey with 7 native classes (center ice,
   faceoff dots, goal frame, goaltender, players, puck, referee).

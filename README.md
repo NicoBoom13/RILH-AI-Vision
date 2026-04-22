@@ -60,7 +60,11 @@ Outputs:
 
 Useful flags:
 - `--hockey-model` — use HockeyAI (YOLOv8m fine-tuned on ice hockey) instead of COCO YOLO11. Auto-downloads the weights to `models/` on first run. See "Puck detection" section.
-- `--model yolo11n.pt` (faster) | `yolo11m.pt` (default) | `yolo11x.pt` (best, slowest) — only used when `--hockey-model` is not set.
+- `--model <weights>` — YOLO weights (COCO mode only, ignored when `--hockey-model` is set). All are auto-downloaded into `models/` on first use:
+  - `yolo11n.pt` (fastest, lowest quality)
+  - `yolo11m.pt` (default, balanced)
+  - `yolo11x.pt` (best YOLO11 quality, slowest)
+  - `yolo26l.pt` — **YOLO26 large** (~51 MB), newer architecture (released Jan 2026), a good middle ground between `yolo11m` and `yolo11x` on most benchmarks. Worth trying when the COCO detector is the bottleneck.
 - `--tracker bytetrack.yaml` (default) | `configs/bytetrack_tuned.yaml` | `configs/botsort_reid.yaml` — choose the tracker backend. See "Tracking stability" below.
 - `--conf 0.3` — detection confidence threshold (lower = more detections including false positives)
 - `--imgsz 1280` — inference resolution; helps small-object detection (still useful even with HockeyAI)

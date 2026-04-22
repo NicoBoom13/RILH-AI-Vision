@@ -213,7 +213,11 @@ def main():
     parser.add_argument("video", type=str, help="Path to input video")
     parser.add_argument("--output", type=str, default="runs/latest", help="Output directory")
     parser.add_argument("--model", type=str, default="yolo11m.pt",
-                        help="YOLO model (COCO mode only). Ignored when --hockey-model is set.")
+                        help="YOLO model (COCO mode only). Ignored when "
+                             "--hockey-model is set. Examples: yolo11n.pt "
+                             "(fast), yolo11m.pt (default), yolo11x.pt (best "
+                             "YOLO11), yolo26l.pt (YOLO26 large, ~51MB; "
+                             "auto-downloaded on first use).")
     parser.add_argument("--hockey-model", action="store_true",
                         help="Use HockeyAI (YOLOv8m fine-tuned on ice hockey) instead of COCO YOLO11.")
     parser.add_argument("--tracker", type=str, default="bytetrack.yaml",
