@@ -15,6 +15,19 @@ analytics. Built from open-source modules + custom code only.
   pretrained keypoint detector from the same team as HockeyAI) **does not
   transfer to roller rinks** — see "Test run log" below. Requires a
   roller-specific annotated dataset + fine-tune. Parked.
+- **Phase 1.5** ✅ implemented (v3): team clustering via
+  pose-based torso crop (YOLO11-pose shoulders→hips, bbox-fallback
+  15–45% × 25–75% for dark jerseys the pose model misses) + multi-point
+  dominant averaging (3×2 grid inside the torso) + per-crop k-means
+  majority vote (fit on skaters only, goalies classified post-hoc against
+  those centroids). HSV by default (`--space bgr` also available).
+  `dominant_bgr` uses a val-only filter (no sat bias) because near-
+  grayscale jerseys like white/black carry their signal in V, not H/S.
+  User-validated on test12 as "practically perfect". Residual ~0.3% of
+  frames: referees (HockeyAI mislabels them 'player' on roller → can't
+  filter by class_name) and the Pont de Metz goalie (white pads →
+  classified pale). Further improvement needs position-based assignment
+  (needs Phase 3) or custom goalie sampling — deferred.
 - **Phase 6** 🟡 partially implemented: jersey-number OCR on dorsal crops
   works when a track has enough back-facing samples. On `test08`, 52/433
   tracks were identified (12%) and 11 player groups emerged via number-based
@@ -25,15 +38,18 @@ analytics. Built from open-source modules + custom code only.
   constraint (option "propre", not started).
 
 ## Architecture
-Two/three-pass pipeline:
+Multi-pass pipeline:
 1. `src/phase1_detect_track.py` → produces `tracks.json` (per-frame bounding
    boxes, class IDs, persistent track IDs)
-2. `src/phase2_followcam.py` → reads `tracks.json` + original video →
+2. `src/phase1_5_teams.py` → reads `tracks.json` + video → `tracks_teams.json`
+   with a team_id (0/1) per player track via k=2 k-means on median torso BGR.
+   Optional; Phase 6 annotation falls back to inline clustering if absent.
+3. `src/phase2_followcam.py` → reads `tracks.json` + original video →
    produces follow-cam MP4
-3. `src/phase6_identify.py` → reads `tracks.json` + video →
+4. `src/phase6_identify.py` → reads `tracks.json` + video →
    `tracks_identified.json` with per-track jersey number + team merge groups
-4. `src/phase6_annotate.py` → renders an annotated video with `#NN` / `#??`
-   labels and green/blue team boxes using the outputs of (1) and (3)
+5. `src/phase6_annotate.py` → renders an annotated video with `#NN` / `#??`
+   labels and green/blue team boxes, using (1), (4), and (2) if present
 
 Why multi-pass: detection is the slow step. Decoupling lets us iterate on
 cinematography, identification, and analytics without re-running inference.
@@ -99,7 +115,8 @@ Annotation (`phase6_annotate.py`):
 1. **Track fragmentation is the #1 blocker now.** ~12 real entities on the
    clip but trackers produce 300–430 track IDs. Neither a longer buffer nor
    BoT-SORT+ReID solves it (see test10/test11). Next step: post-hoc Re-ID
-   clustering with hard constraint (5 skaters + goalie per team × 2 teams).
+   clustering with hard constraint (4 skaters + 1 goalie per team × 2 teams,
+   plus 1–2 referees that are dropped by HockeyAI but leak through in COCO).
 2. **Phase 3 calibration is blocked on annotation.** HockeyRink (ice) does
    not transfer to roller rinks — the model "recognises" a rink but collapses
    all 56 keypoints to a cluster instead of localising them individually.
@@ -130,6 +147,33 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test12 — Full pipeline on Video 03 (Vierzon vs Pont de Metz, 30s,
+  1920×1080 @ 60fps).** Phase 1 (HockeyAI + ByteTrack default): 250 player
+  tracks (221 skaters + 29 goaltender fragments; HockeyAI does NOT tag
+  refs on roller video — they leak as class_name='player'), 176 puck
+  tracks, puck in **28.6%** of frames. Phase 1 ran ~22 min wall-clock (MPS
+  + YOLOv8m @ 1280 on 60fps pushes compute). Phase 6 identify: 26/250
+  (**10.4%**), 4 player groups (#5, #7×2, #10). Phase 1.5 iterated v1→v3:
+  * **v1** (BGR median-per-track, bbox-torso 10–40% × full width, sat
+    filter): 123/127 split, margin 2.94. Centroids OK but labels visually
+    wrong — at 9s all tracks blue, at 20s goalie + skater split across
+    clusters. Root cause: sat-filter excludes the actual jersey pixels
+    for near-grayscale teams (white/black), and per-track median is
+    fragile on short tracks.
+  * **v2** (pose-based torso + 3×2 multi-point dominant avg + per-crop
+    majority vote + tight bbox-fallback 15–45% × 25–75% + val-only
+    filter): 185/65 split, margin 2.15, centroids correctly pale
+    (Vierzon) vs dark (Pont de Metz), only 12 mixed-vote tracks.
+    User-validated as "practically perfect" except refs at 1s/11s
+    (all green) and Pont de Metz goalie + neighbours at 14–17s (green).
+  * **v3** (+ skater-only centroid fit, goalies classified post-hoc):
+    183/67 split, goalie split 19/10 (identical to v2). Fix is
+    technically correct but goalie color signatures (white pads) are
+    fundamentally closer to the pale cluster. Accepted as final.
+  Outputs preserved colocated: `tracks_teams_v1.json`,
+  `tracks_teams_v2nogoalfix.json`, `annotated_numbered_v1.mp4`,
+  `annotated_numbered_v2nogoalfix.mp4`; current `tracks_teams.json` /
+  `annotated_numbered.mp4` = v3.
 - **test11 — Phase 1 HockeyAI + BoT-SORT+ReID+GMC (clip60-2).** 349 player
   tracks, 221 puck tracks. Longest track 639 frames (10.7s), 5 tracks ≥500
   frames. Longer tracks than test10 but slightly more of them — ReID from
@@ -202,8 +246,10 @@ what differs from the immediate predecessor.
 - OCR path implemented (`phase6_identify.py`). Current blocker:
   track fragmentation limits OCR coverage. **Next milestone: post-hoc Re-ID
   clustering under team constraint** — force ~300 tracks down to ~12
-  entities via appearance embedding + max 6 entities per team + temporal
-  non-overlap. Opt-in: won't replace the tracker, just merges its output.
+  entities via appearance embedding + max 5 entities per team (4 skaters +
+  1 goalie) + temporal non-overlap. Prerequisite: `tracks_teams.json` from
+  Phase 1.5 to provide the team label per track. Opt-in: won't replace the
+  tracker, just merges its output.
 
 **Phase 7 — Web platform** (2–3 weeks)
 - FastAPI backend + Next.js frontend. Match library, clip editor, tagging,

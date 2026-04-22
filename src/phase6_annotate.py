@@ -227,12 +227,20 @@ def main():
     tracks_data = json.loads(tracks_json.read_text())
     identified = json.loads(id_json.read_text())
 
-    print("Sampling jersey colors per track…")
-    colors = sample_track_colors(tracks_data, video, args.color_samples)
-    print(f"  colors extracted for {len(colors)} tracks")
+    teams_json_path = tracks_json.with_name("tracks_teams.json")
+    if teams_json_path.exists():
+        print(f"Using precomputed teams from {teams_json_path}")
+        teams_data = json.loads(teams_json_path.read_text())
+        team_of = {int(tid): info["team_id"]
+                   for tid, info in teams_data["tracks"].items()}
+        team_colors = [tuple(c) for c in teams_data["team_centers_bgr"]]
+    else:
+        print("Sampling jersey colors per track…")
+        colors = sample_track_colors(tracks_data, video, args.color_samples)
+        print(f"  colors extracted for {len(colors)} tracks")
+        print("Clustering teams (k=2)…")
+        team_of, team_colors = cluster_teams(colors)
 
-    print("Clustering teams (k=2)…")
-    team_of, team_colors = cluster_teams(colors)
     print(f"  cluster 0 mean BGR: {team_colors[0]} → GREEN")
     print(f"  cluster 1 mean BGR: {team_colors[1]} → BLUE")
     n0 = sum(1 for t in team_of.values() if t == 0)
