@@ -82,8 +82,23 @@ def orientation_from_kps(kp_xy, kp_conf, thr=0.3):
     return "side"
 
 
-def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3, pad_ratio=0.15):
-    """Crop between shoulders and hips (where the dorsal number sits)."""
+def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3,
+                    y_top_frac=0.15, y_bot_frac=0.65, x_pad_ratio=0.30):
+    """Crop the dorsal number band — the rectangle where the back number
+    actually sits.
+
+    Vertical range: `y_top_frac` → `y_bot_frac` of the shoulder-to-hip span
+    (default 15–65 %, i.e. the upper half of the torso where the number is
+    centred — NOT the full torso).
+
+    Horizontal range: shoulder-width inflated by `x_pad_ratio` on each side
+    (default 30 %) to catch wide digits without cutting off edges.
+
+    This tight band has an aspect ratio (w:h) close to 2:1 instead of the
+    ~0.8:1 of the old full-torso crop, which is much closer to what PARSeq
+    expects (4:1 = 128:32). The remaining 2× discrepancy is absorbed by
+    letterbox padding inside ParseqOCR.read_batch, so PARSeq never sees a
+    horizontally-stretched digit."""
     shos_ok = kp_conf[KP_LSHO] > thr and kp_conf[KP_RSHO] > thr
     hips_ok = kp_conf[KP_LHIP] > thr and kp_conf[KP_RHIP] > thr
     if not shos_ok:
@@ -97,11 +112,12 @@ def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3, pad_ratio=0.15):
         hip_cy = (kp_xy[KP_LHIP, 1] + kp_xy[KP_RHIP, 1]) / 2.0
     else:
         hip_cy = sho_cy + 2.2 * sho_w
-    half_w = sho_w * (0.75 + pad_ratio)
+    torso_h = hip_cy - sho_cy
+    y1 = sho_cy + y_top_frac * torso_h
+    y2 = sho_cy + y_bot_frac * torso_h
+    half_w = sho_w * (0.5 + x_pad_ratio)
     x1 = sho_cx - half_w
     x2 = sho_cx + half_w
-    y1 = sho_cy - sho_w * 0.1
-    y2 = hip_cy
     return safe_crop(frame, [x1, y1, x2, y2])
 
 
@@ -118,8 +134,73 @@ def ious(xyxy, boxes):
     return inter / (a0 + a1 - inter + 1e-6)
 
 
+class TrOCR_OCR:
+    """Microsoft TrOCR (VisionEncoderDecoder, base, printed-text variant).
+    Heavier than PARSeq (~334M params) but handles arbitrary input aspect
+    ratios natively via its ViT encoder — no letterbox trick needed.
+
+    Interface matches ParseqOCR.read_batch: returns list of (digits, conf).
+    Confidence is the mean softmax probability of the selected tokens in
+    the generated sequence."""
+
+    def __init__(self, device, model_name="microsoft/trocr-base-printed"):
+        from transformers import TrOCRProcessor, VisionEncoderDecoderModel
+        self.device = device
+        print(f"Loading {model_name} (first run downloads ~340 MB)…")
+        self.processor = TrOCRProcessor.from_pretrained(model_name)
+        self.model = (VisionEncoderDecoderModel.from_pretrained(model_name)
+                      .to(device).eval())
+
+    @torch.no_grad()
+    def read_batch(self, bgr_crops):
+        if not bgr_crops:
+            return []
+        pil_imgs = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))
+                    for c in bgr_crops]
+        pixel_values = self.processor(
+            images=pil_imgs, return_tensors="pt"
+        ).pixel_values.to(self.device)
+        gen = self.model.generate(
+            pixel_values,
+            max_new_tokens=6,
+            output_scores=True,
+            return_dict_in_generate=True,
+        )
+        sequences = gen.sequences
+        texts = self.processor.batch_decode(sequences, skip_special_tokens=True)
+
+        # Per-sample confidence = mean softmax prob of the chosen tokens
+        # across the n_gen steps. Sequences start with decoder_start_token at
+        # position 0; token at step i is sequences[:, i + 1].
+        import torch.nn.functional as F
+        if gen.scores:
+            step_probs = []
+            for i, scores in enumerate(gen.scores):
+                probs = F.softmax(scores, dim=-1)
+                chosen = sequences[:, i + 1].unsqueeze(1)
+                step_probs.append(probs.gather(1, chosen).squeeze(1))
+            confs = torch.stack(step_probs, dim=1).mean(dim=1).cpu().numpy()
+        else:
+            confs = [1.0] * len(pil_imgs)
+
+        out = []
+        for text, conf in zip(texts, confs):
+            digits = "".join(ch for ch in text if ch.isdigit())
+            if 1 <= len(digits) <= 2:
+                out.append((digits, float(conf)))
+            else:
+                out.append(("", 0.0))
+        return out
+
+
 class ParseqOCR:
-    """PARSeq scene-text recognition via torch.hub."""
+    """PARSeq scene-text recognition via torch.hub.
+
+    Upstream PARSeq resizes its input directly to `model.hparams.img_size`
+    (typically 32×128, a 1:4 h:w aspect). Our torso crops are close to
+    square, so a naive resize stretches digits horizontally by ~3-4×,
+    which degrades recognition badly. We letterbox-pad each crop to 1:4
+    BEFORE the resize so PARSeq sees geometrically-correct digits."""
 
     def __init__(self, device):
         self.device = device
@@ -127,15 +208,39 @@ class ParseqOCR:
         self.model = torch.hub.load(
             "baudm/parseq", "parseq", pretrained=True, trust_repo=True
         ).eval().to(device)
-        self.transform = self.model.hparams.img_size
-        # PARSeq ships its own preprocessing via torchvision-style transforms
-        # exposed as an attribute after loading
+        self.img_size = self.model.hparams.img_size  # (h, w), usually (32, 128)
         from torchvision import transforms as T
         self.preprocess = T.Compose([
-            T.Resize(self.transform, T.InterpolationMode.BICUBIC),
+            T.Resize(self.img_size, T.InterpolationMode.BICUBIC),
             T.ToTensor(),
             T.Normalize(0.5, 0.5),
         ])
+        self.target_w_over_h = float(self.img_size[1]) / float(self.img_size[0])
+
+    @staticmethod
+    def _letterbox_to_aspect(bgr, target_w_over_h, pad_value=0):
+        """Pad crop with `pad_value` (black) so w/h == target aspect, without
+        changing the content region. If the crop is already wider than target,
+        pad top/bottom instead."""
+        h, w = bgr.shape[:2]
+        if h <= 0 or w <= 0:
+            return bgr
+        current = w / h
+        if current < target_w_over_h:
+            new_w = int(round(h * target_w_over_h))
+            pad = new_w - w
+            left = pad // 2
+            padded = np.full((h, new_w, 3), pad_value, dtype=np.uint8)
+            padded[:, left:left + w] = bgr
+            return padded
+        if current > target_w_over_h:
+            new_h = int(round(w / target_w_over_h))
+            pad = new_h - h
+            top = pad // 2
+            padded = np.full((new_h, w, 3), pad_value, dtype=np.uint8)
+            padded[top:top + h, :] = bgr
+            return padded
+        return bgr
 
     @torch.no_grad()
     def read_batch(self, bgr_crops):
@@ -143,8 +248,11 @@ class ParseqOCR:
         means no digit found or low confidence."""
         if not bgr_crops:
             return []
+        letterboxed = [
+            self._letterbox_to_aspect(c, self.target_w_over_h) for c in bgr_crops
+        ]
         pil_imgs = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))
-                    for c in bgr_crops]
+                    for c in letterboxed]
         batch = torch.stack([self.preprocess(im) for im in pil_imgs]).to(self.device)
         logits = self.model(batch)
         probs = logits.softmax(-1)
@@ -254,6 +362,7 @@ def run(
     ocr_min_conf: float,
     pose_imgsz: int,
     ocr_batch_size: int,
+    ocr_engine: str = "parseq",
 ):
     device = pick_device()
     print(f"Device: {device}")
@@ -274,7 +383,11 @@ def run(
     print(f"Loading pose model: {pose_path}")
     pose_model = YOLO(pose_path)
 
-    ocr = ParseqOCR(device=device)
+    if ocr_engine == "trocr":
+        ocr = TrOCR_OCR(device=device)
+    else:
+        ocr = ParseqOCR(device=device)
+    print(f"OCR engine: {ocr_engine}")
 
     # sample_results[tid] = [{"frame", "orient", "number", "conf"}, ...]
     sample_results = defaultdict(list)
@@ -420,6 +533,10 @@ def main():
     p.add_argument("--ocr-min-conf", type=float, default=0.4)
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--ocr-batch", type=int, default=32)
+    p.add_argument("--ocr-engine", choices=["parseq", "trocr"], default="parseq",
+                   help="OCR engine. parseq = PARSeq via torch.hub (fast). "
+                        "trocr = Microsoft TrOCR base-printed (heavier ~340MB, "
+                        "more robust on difficult / small / angled text).")
     args = p.parse_args()
 
     tracks_json = Path(args.tracks_json)
@@ -431,6 +548,7 @@ def main():
         tracks_json, video, output,
         args.pose_model, args.samples_per_track, args.ocr_min_conf,
         args.pose_imgsz, args.ocr_batch,
+        ocr_engine=args.ocr_engine,
     )
 
 

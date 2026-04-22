@@ -140,7 +140,12 @@ def build_detections(boxes):
     )
 
 
-def render(tracks_data, identified, team_of, video_path, output):
+def render(tracks_data, identified, team_of, video_path, output,
+           entity_of_tid=None, entity_by_id=None):
+    """Render. If entity_of_tid + entity_by_id are provided, each merged
+    track inherits its entity's team_id and jersey_number so every member
+    of the same entity is drawn with the same color + label across frames.
+    Tracks outside any entity fall back to per-track team/jersey values."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -154,6 +159,23 @@ def render(tracks_data, identified, team_of, video_path, output):
 
     id_tracks = identified.get("tracks", {})
     frames_map = {fr["frame"]: fr["boxes"] for fr in tracks_data["frames"]}
+
+    def team_for(tid_i):
+        if entity_of_tid is not None:
+            eid = entity_of_tid.get(tid_i)
+            if eid is not None:
+                et = entity_by_id[eid].get("team_id")
+                if et is not None:
+                    return et
+        return team_of.get(tid_i, 0)
+
+    def jersey_for(tid_i):
+        if entity_of_tid is not None:
+            eid = entity_of_tid.get(tid_i)
+            if eid is not None:
+                return entity_by_id[eid].get("jersey_number")
+        info = id_tracks.get(str(tid_i))
+        return info.get("jersey_number") if info else None
 
     # One annotator trio per team, each locked to its team color
     annotators = []
@@ -177,8 +199,7 @@ def render(tracks_data, identified, team_of, video_path, output):
 
         by_team = [[], []]
         for b in player_boxes:
-            t = team_of.get(b["track_id"], 0)
-            by_team[t].append(b)
+            by_team[team_for(b["track_id"])].append(b)
 
         for team_id, team_boxes in enumerate(by_team):
             if not team_boxes:
@@ -186,8 +207,7 @@ def render(tracks_data, identified, team_of, video_path, output):
             dets = build_detections(team_boxes)
             labels = []
             for tid in dets.tracker_id:
-                info = id_tracks.get(str(int(tid)))
-                num = info["jersey_number"] if info and info.get("jersey_number") else None
+                num = jersey_for(int(tid))
                 labels.append(f"#{num}" if num else "#??")
             a = annotators[team_id]
             frame = a["box"].annotate(scene=frame, detections=dets)
@@ -247,8 +267,24 @@ def main():
     n1 = sum(1 for t in team_of.values() if t == 1)
     print(f"  tracks assigned: team 0 = {n0}, team 1 = {n1}")
 
+    # Prefer entity-level team + jersey when Phase 1.6 has been run.
+    entities_json_path = tracks_json.with_name("tracks_entities.json")
+    entity_of_tid = None
+    entity_by_id = None
+    if entities_json_path.exists():
+        print(f"Using entities from {entities_json_path}")
+        entities_data = json.loads(entities_json_path.read_text())
+        entity_by_id = entities_data["entities"]
+        entity_of_tid = {}
+        for eid, e in entity_by_id.items():
+            for tid in e["track_ids"]:
+                entity_of_tid[tid] = eid
+        print(f"  {len(entity_by_id)} entities covering "
+              f"{len(entity_of_tid)} tracks")
+
     print("\nRendering annotated video…")
-    render(tracks_data, identified, team_of, video, output)
+    render(tracks_data, identified, team_of, video, output,
+           entity_of_tid=entity_of_tid, entity_by_id=entity_by_id)
 
 
 if __name__ == "__main__":

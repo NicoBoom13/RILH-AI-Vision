@@ -4,7 +4,16 @@ opencv-python>=4.10.0
 numpy>=1.26.0
 lap>=0.5.12
 
-# Phase 6 — player identification (PARSeq via torch.hub)
+# Phase 6 — player identification
+# PARSeq (default OCR, via torch.hub):
 pytorch_lightning>=2.0
 timm>=0.9
 nltk>=3.8
+# TrOCR (optional alternative OCR, heavier but more robust on difficult text):
+transformers>=4.40
+sentencepiece>=0.2
+
+# Phase 1.6 — entity-level Re-ID clustering (OSNet via torchreid)
+torchreid>=0.2.5
+gdown>=5.0           # torchreid-transitive, not declared by it
+tensorboard>=2.0     # torchreid-transitive, not declared by it

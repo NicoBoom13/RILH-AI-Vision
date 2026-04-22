@@ -28,28 +28,44 @@ analytics. Built from open-source modules + custom code only.
   filter by class_name) and the Pont de Metz goalie (white pads →
   classified pale). Further improvement needs position-based assignment
   (needs Phase 3) or custom goalie sampling — deferred.
-- **Phase 6** 🟡 partially implemented: jersey-number OCR on dorsal crops
-  works when a track has enough back-facing samples. On `test08`, 52/433
-  tracks were identified (12%) and 11 player groups emerged via number-based
-  track merging. **The hard blocker is upstream**: tracker fragmentation
-  produces ~300 tracks for ~12 real entities. Neither tuning ByteTrack nor
-  switching to BoT-SORT+ReID+GMC solves this (31–28% fewer tracks, still far
-  off). Next planned step is post-hoc Re-ID clustering under a hard team
-  constraint (option "propre", not started).
+- **Phase 1.6** ✅ implemented: post-hoc **Re-ID clustering** that collapses
+  fragmented tracks into stable entities (one entity = one real player /
+  goalie / ref). Uses OSNet x0_25 (via `torchreid`) medoid embedding per
+  track + greedy merge under **team constraint** (from Phase 1.5),
+  **strict temporal non-overlap**, and **OCR bonus** (from Phase 6 identify).
+  OCR conflicts are a hard block. Output: `tracks_entities.json` consumed
+  downstream by `phase6_annotate.py`. On test12 (250 tracks → 40 entities),
+  on test13 (167 tracks → 24 entities). Doesn't replace the tracker — it
+  post-processes its output. Design doc: `docs/phase_1_6_design.md`.
+- **Phase 6** 🟡 partially implemented: jersey-number OCR on dorsal crops.
+  Two OCR engines plumbed in — PARSeq (default, fast, via torch.hub) and
+  Microsoft TrOCR (`--ocr-engine trocr`, heavier ~340 MB, ~2× recall on
+  difficult video). Crop is a **tight horizontal band of the back** with
+  **letterbox padding to PARSeq's 4:1 aspect** (added after observing that
+  stretched-square crops confuse digit recognition). On `test08` (old
+  crop): 52/433 tracks identified (12%), 11 player groups. On `test13`
+  (new crop + TrOCR): 39/167 (23%), 10 player groups. **Upstream blocker
+  (fragmentation) is partly addressed by Phase 1.6**, but OCR itself
+  caps out on small / motion-blurred / oblique-angle jersey numbers —
+  video quality is the bottleneck after ~test13.
 
 ## Architecture
 Multi-pass pipeline:
-1. `src/phase1_detect_track.py` → produces `tracks.json` (per-frame bounding
-   boxes, class IDs, persistent track IDs)
-2. `src/phase1_5_teams.py` → reads `tracks.json` + video → `tracks_teams.json`
-   with a team_id (0/1) per player track via k=2 k-means on median torso BGR.
-   Optional; Phase 6 annotation falls back to inline clustering if absent.
-3. `src/phase2_followcam.py` → reads `tracks.json` + original video →
-   produces follow-cam MP4
-4. `src/phase6_identify.py` → reads `tracks.json` + video →
-   `tracks_identified.json` with per-track jersey number + team merge groups
-5. `src/phase6_annotate.py` → renders an annotated video with `#NN` / `#??`
-   labels and green/blue team boxes, using (1), (4), and (2) if present
+1. `src/phase1_detect_track.py` → `tracks.json` (per-frame bboxes, class IDs,
+   persistent track IDs)
+2. `src/phase1_5_teams.py` → `tracks_teams.json`: team_id (0/1) per player
+   track via k=2 on pose-based torso color (HSV default, skater-only fit,
+   goalies classified post-hoc)
+3. `src/phase2_followcam.py` → follow-cam MP4 (uses only `tracks.json`)
+4. `src/phase6_identify.py` → `tracks_identified.json`: per-track jersey
+   number via YOLO11-pose + PARSeq or TrOCR. Tight torso-back crop +
+   letterbox pad to 4:1
+5. `src/phase1_6_entities.py` → `tracks_entities.json`: fragmented tracks
+   collapsed into stable entities via OSNet embeddings + team/overlap/OCR
+   constraints (greedy merge)
+6. `src/phase6_annotate.py` → annotated MP4 with entity-level color +
+   `#NN`/`#??` labels (entity labels shared across all merged tracks).
+   Falls back to per-track labels if (5) hasn't been run.
 
 Why multi-pass: detection is the slow step. Decoupling lets us iterate on
 cinematography, identification, and analytics without re-running inference.
@@ -97,37 +113,71 @@ inference tractable):
 2. Run **YOLO11-pose** on the full frames, match by IoU to the tracked bbox.
 3. Classify **orientation** from pose keypoints (nose + eyes → front;
    ears without nose → back; shoulders only → side).
-4. On back-facing samples, crop the **torso-back region** (shoulders → hips).
-5. Run **PARSeq** scene-text recognition (via `torch.hub`, needs
-   `pytorch_lightning`, `timm`, `nltk`), keep digits only, 1–2 chars.
-6. **Vote** per track; the jersey number is the majority winner.
-7. **Merge** tracks that share the same confident number and don't overlap
+4. On back-facing samples, crop a **tight horizontal band** of the back
+   (15–65 % of shoulder→hip height, shoulder width + 30 % pad). This is
+   narrower than the full torso but matches the region where the jersey
+   number actually sits.
+5. **Letterbox-pad** the crop to the OCR engine's expected aspect (1:4 h:w
+   for PARSeq's 32×128) before inference — avoids horizontal stretching
+   of digits that used to cause 6↔7 and 0↔6 confusions.
+6. Run OCR (`--ocr-engine {parseq,trocr}`):
+   - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`)
+   - **TrOCR** (`microsoft/trocr-base-printed`, via `transformers`+
+     `sentencepiece`): heavier (~340 MB) but ~2× recall on difficult text.
+7. Keep digits only, 1–2 chars. **Vote** per track; the jersey number is
+   the majority winner.
+8. **Merge** tracks that share the same confident number and don't overlap
    in time — they're the same player with a broken track.
 
+### Entity clustering (Phase 1.6)
+`phase1_6_entities.py` post-processes fragmented tracks into stable entities:
+1. Per-track **OSNet x0_25 medoid embedding** (512-d, L2-normalised) over
+   the top-N confidence detections.
+2. Build candidate merge graph: all pairs `(a, b)` with **same team_id
+   from Phase 1.5** (with vote_confidence ≥ 0.67 on both sides), **zero
+   temporal overlap**, no OCR conflict (same team + different confident
+   numbers rejects the pair).
+3. Edge weight = `cos_sim(emb_a, emb_b) + 10·1[same_jersey] +
+   0.05·1[both_goalie]`. OCR-seeded pairs always win (weight ≥ 10).
+4. Greedy merge in descending weight until similarity drops below
+   `--sim-threshold` (default 0.65). Re-checks overlap on the merged
+   cluster each time.
+5. Output: `tracks_entities.json` with `track_ids` lists, derived
+   `team_id`/`is_goaltender`/`jersey_number`/frame ranges, plus a list
+   of unmatched singleton tracks.
+
 Annotation (`phase6_annotate.py`):
-- Supervision-style boxes/labels/traces (same look as Phase 1's annotated
-  MP4), but box color is **forced green or blue** based on k=2 k-means
-  clustering over per-track median jersey color (sampled on torso crops
-  10–40% of bbox height, HSV-filtered for saturation).
-- Labels read `#NN` when identified, `#??` otherwise. No class name suffix.
+- Supervision-style boxes/labels/traces. Box color is **forced green or
+  blue** per team.
+- **Entity-aware**: if `tracks_entities.json` exists, the label + team come
+  from the entity (so every merged fragment shares the same `#NN` and
+  colour across the video). Otherwise, per-track values from
+  `tracks_teams.json` + `tracks_identified.json`.
+- Labels read `#NN` when identified, `#??` otherwise.
 
 ## Known limitations (in priority order)
-1. **Track fragmentation is the #1 blocker now.** ~12 real entities on the
-   clip but trackers produce 300–430 track IDs. Neither a longer buffer nor
-   BoT-SORT+ReID solves it (see test10/test11). Next step: post-hoc Re-ID
-   clustering with hard constraint (4 skaters + 1 goalie per team × 2 teams,
-   plus 1–2 referees that are dropped by HockeyAI but leak through in COCO).
-2. **Phase 3 calibration is blocked on annotation.** HockeyRink (ice) does
+1. **Video source quality is the current bottleneck** (post test13). Torso
+   crops of 30–50 px with motion blur and oblique angles defeat even TrOCR;
+   team colour clustering margin drops when jerseys aren't sharply contrasted.
+   No algorithmic fix short of fine-tuning — needs better input footage
+   (stable camera, good lighting, close distance, high contrast jerseys).
+2. **Track fragmentation** is real but **partly absorbed** by Phase 1.6
+   (test13: 167 tracks → 24 entities under team + non-overlap + OCR
+   constraints). Residuals: goalies over-fragment because HockeyAI
+   intermittently flips their class between `goaltender` and `player`;
+   refs merge into the two teams (no third cluster).
+3. **Phase 3 calibration** is blocked on annotation. HockeyRink (ice) does
    not transfer to roller rinks — the model "recognises" a rink but collapses
    all 56 keypoints to a cluster instead of localising them individually.
    Unblocking requires 200–300 annotated frames of roller rinks.
-3. **Puck detection quality** is workable (~43% of frames with HockeyAI vs
+4. **Puck detection quality** is workable (~43% of frames with HockeyAI vs
    <1% with COCO) but drops on motion blur, small pucks, and uneven lighting.
    Roller-specific fine-tune (Phase 4) would narrow the gap.
-4. **Phase 6 coverage** is 12% of tracks in test08; this is gated by (1) —
-   short fragment tracks rarely have enough back-facing samples for OCR.
-5. No event detection yet (Phase 5).
-6. Single-camera assumption. Multi-camera stitching = Phase 7.
+5. **Refs leak into team clusters** because HockeyAI doesn't recognise
+   roller-hockey referee uniforms — they're tagged `class_name='player'`.
+   Fixable by k=3 clustering in Phase 1.5 or a dedicated ref detector.
+6. No event detection yet (Phase 5).
+7. Single-camera assumption. Multi-camera stitching = Phase 7.
 
 ## Conventions
 - Python 3.10+ (project uses 3.12 in the dev venv)
@@ -147,6 +197,22 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test13 — Full pipeline + Phase 1.6 + TrOCR on Video 04 (France vs
+  Monde, 60s, 1920×1080 @ 30fps).** Phase 1 (HockeyAI + ByteTrack default):
+  167 player tracks (130 skaters + 37 goaltender fragments). Phase 1.5
+  (HSV): 94/73 split, margin **1.46** (low — France dark-blue vs Monde
+  light-green are less contrasted than the test12 white-vs-black; 41
+  mixed-vote tracks). Phase 6 identify iterated PARSeq→TrOCR:
+  * **PARSeq** (new tight crop + letterbox): 19/167 numbered (11.4%),
+    3 player groups.
+  * **TrOCR** (same crops): 39/167 (**23.4%**), **10 player groups**.
+    ~2× recall. Numbers found: #1, #2, #6, #9, #10, #19, #26, #35, #98.
+  Phase 1.6 (OSNet + greedy merge) on TrOCR output: **24 entities**
+  (12/12 team split, 41 unmatched). 7/10 top entities labelled. User
+  feedback: team classification still has errors on this clip (margin
+  1.46 reflects real trouble); numbers not stable enough across the
+  clip. Source video quality (motion blur, angle, 30 fps → less texture
+  on small torsos) is now the bottleneck, not the algorithms.
 - **test12 — Full pipeline on Video 03 (Vierzon vs Pont de Metz, 30s,
   1920×1080 @ 60fps).** Phase 1 (HockeyAI + ByteTrack default): 250 player
   tracks (221 skaters + 29 goaltender fragments; HockeyAI does NOT tag
@@ -242,14 +308,15 @@ what differs from the immediate predecessor.
 - Goals, shots, penalties — temporal action models (TSN, MoViNet,
   SlowFast). Likely needs a custom labelled dataset.
 
-**Phase 6 — Player identification** (in progress)
-- OCR path implemented (`phase6_identify.py`). Current blocker:
-  track fragmentation limits OCR coverage. **Next milestone: post-hoc Re-ID
-  clustering under team constraint** — force ~300 tracks down to ~12
-  entities via appearance embedding + max 5 entities per team (4 skaters +
-  1 goalie) + temporal non-overlap. Prerequisite: `tracks_teams.json` from
-  Phase 1.5 to provide the team label per track. Opt-in: won't replace the
-  tracker, just merges its output.
+**Phase 6 — Player identification** (partial)
+- OCR paths implemented: PARSeq (default) + TrOCR (`--ocr-engine trocr`).
+- Phase 1.6 (entity clustering) is done and absorbs a lot of the
+  fragmentation. Remaining bottleneck is **OCR recall on small / blurry
+  numbers** — addressed either by better source video (see limitation 1)
+  or by an eventual Phase 4 fine-tune on jersey-number crops.
+- Not done: ref isolation (Known limitations #5); entity-level
+  multi-frame OCR consensus (could boost recall by voting across all
+  crops of a merged entity, not just per track).
 
 **Phase 7 — Web platform** (2–3 weeks)
 - FastAPI backend + Next.js frontend. Match library, clip editor, tagging,
