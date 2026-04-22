@@ -114,7 +114,11 @@ Tracker is configurable via `--tracker <yaml>`:
 `phase6_identify.py` pipeline, one pass per track (not per frame — keeps
 inference tractable):
 1. Sample the N highest-confidence detections for each track_id.
-2. Run **YOLO11-pose** on the full frames, match by IoU to the tracked bbox.
+2. Run the **YOLO pose model** on the full frames, match by IoU to the
+   tracked bbox. Default is `yolo11n-pose.pt` (~6 MB); `--pose-model
+   yolo26l-pose.pt` (~55 MB) is available for better keypoint recall on
+   dark / low-contrast / motion-blurred torsos. Both auto-download into
+   `models/` on first use.
 3. Classify **orientation** from pose keypoints (nose + eyes → front;
    ears without nose → back; shoulders only → side).
 4. On back-facing samples, crop a **tight horizontal band** of the back

@@ -530,7 +530,11 @@ def main():
     p.add_argument("--samples-per-track", type=int, default=8,
                    help="Crops per track to vote on (higher = more robust, "
                         "slower inference)")
-    p.add_argument("--pose-model", type=str, default="yolo11n-pose.pt")
+    p.add_argument("--pose-model", type=str, default="yolo11n-pose.pt",
+                   help="YOLO pose model. Examples: yolo11n-pose.pt (default, "
+                        "~6MB, fast), yolo11x-pose.pt (best YOLO11 pose), "
+                        "yolo26l-pose.pt (YOLO26 large pose, ~55MB, newer "
+                        "architecture). Auto-downloaded into models/.")
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--preview-cols", type=int, default=10)
     p.add_argument("--space", choices=["hsv", "bgr"], default="hsv",

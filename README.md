@@ -78,7 +78,7 @@ python src/phase1_5_teams.py runs/match01/tracks.json path/to/match.mp4
 
 Pipeline: YOLO11-pose → torso-band crop (shoulders→hips, bbox-fallback for dark jerseys) → 3×2 multi-point dominant color averaging → k=2 k-means on skater tracks (HSV default) → majority vote per track. Goalies classified post-hoc against the skater centroids so their often-contrasting pads don't pull the team centres.
 
-Tunables: `--space {hsv,bgr}`, `--grid RxC` (default `3x2`), `--samples-per-track`. See `teams_preview.png` + the JSON's `cluster_margin` to judge whether the two teams actually separate in your video.
+Tunables: `--space {hsv,bgr}`, `--grid RxC` (default `3x2`), `--samples-per-track`, `--pose-model` (default `yolo11n-pose.pt`; pass `yolo26l-pose.pt` for the newer YOLO26-large pose model — ~55 MB, better keypoint localisation on dark / low-contrast jerseys at the cost of ~3× inference time). See `teams_preview.png` + the JSON's `cluster_margin` to judge whether the two teams actually separate in your video.
 
 ### Phase 6 — Player identification
 
@@ -98,7 +98,7 @@ Tunables for `phase6_identify.py`:
 - `--ocr-engine {parseq,trocr}` — PARSeq (default, fast, via `torch.hub`) vs TrOCR (`microsoft/trocr-base-printed`, heavier ~340 MB but ~2× recall on difficult text). Both are plumbed in behind the same batch interface.
 - `--samples-per-track` — default 15. Raise if tracks are long-lived and OCR coverage is too low.
 - `--ocr-min-conf` — default 0.4. Lower to widen coverage at the cost of more false positives.
-- `--pose-model` — default `yolo11n-pose.pt` (auto-downloaded into `models/`).
+- `--pose-model` — default `yolo11n-pose.pt` (~6 MB, fast). Pass `yolo11x-pose.pt` for the best YOLO11 pose or `yolo26l-pose.pt` (~55 MB, newer architecture) for better keypoint recall on dark or motion-blurred torsos; both are auto-downloaded into `models/`.
 
 Typical coverage on a 60 s clip: 11–23 % of tracks numbered (depending on source video quality and OCR engine). This is enough for Phase 1.6 below to seed entity merges.
 
