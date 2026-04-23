@@ -205,6 +205,29 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps) —
+  INTERROMPU après Phase 1.5.** Premier essai avec `--model yolo26l.pt`
+  (COCO) lancé par erreur puis stoppé à la demande (l'objectif était de
+  garder HockeyAI pour la détection joueur+palet, YOLO26 seulement pour
+  les pose). Relancé proprement :
+  * **Phase 1** ✅ HockeyAI + ByteTrack default. 3600 frames. 435 player
+    tracks (313 skaters + 122 goaltenders), 260 puck tracks, puck dans
+    **1870/3600 frames (51,9 %)** — meilleur qu'test04 (42,6 %) et
+    test12 (28,6 %). Runtime ~1h wall-clock.
+    Sortie : `runs/test14/tracks.json`, `runs/test14/annotated.mp4`.
+  * **Phase 1.5** ✅ HSV k=2 avec `--pose-model yolo26l-pose.pt` (premier
+    run production de YOLO26L-pose). 282/152 split, marge 1,95,
+    27 mixed-vote tracks, 1 seul track sans sample. Pose-based : 1712
+    crops (vs 656 bbox-fallback) = **72 % de crops pose** contre ~57 %
+    sur test13 avec yolo11n-pose → YOLO26L-pose améliore bien le taux
+    de succès des keypoints sur les torses dark/blurry.
+    Sortie : `runs/test14/tracks_teams.json`, `teams_preview.png`.
+  * **Phase 6 identify** ⏸️ PAS LANCÉE. Prévu :
+    `--pose-model yolo26l-pose.pt --ocr-engine trocr`.
+  * **Phase 1.6** ⏸️ PAS LANCÉE.
+  * **Phase 6 annotate** ⏸️ PAS LANCÉE.
+  Pour reprendre : lancer les 3 commandes restantes dans cet ordre sur
+  `runs/test14/tracks.json` + `tracks_teams.json` + Video 05.
 - **test13 — Full pipeline + Phase 1.6 + TrOCR on Video 04 (France vs
   Monde, 60s, 1920×1080 @ 30fps).** Phase 1 (HockeyAI + ByteTrack default):
   167 player tracks (130 skaters + 37 goaltender fragments). Phase 1.5
@@ -332,6 +355,74 @@ what differs from the immediate predecessor.
 
 **Phase 8+** — Multi-camera stitching, live streaming (RTMP/HLS via
 MediaMTX), mobile control app.
+
+## Pistes explorées (non implémentées)
+
+Veille technique archivée pour référence future. Rien ici n'est codé — voir
+"Roadmap" pour les pistes engagées.
+
+### Modèles hockey publics inventoriés (mars 2026)
+
+Aucun modèle public n'est entraîné sur du roller inline hockey avec palet.
+Le champ d'options se réduit à :
+
+- **HockeyAI (utilisé)** — YOLOv8m, 2101 frames SHL, 7 classes. Meilleur
+  socle disponible. Ref : [huggingface.co/SimulaMet-HOST/HockeyAI](https://huggingface.co/SimulaMet-HOST/HockeyAI).
+- **Rink hockey YOLOv7** (Lopes et al., MDPI 2024) — 2525 frames, 7 classes
+  (ball, player, stick, referee, crowd, goalkeeper, goal). **Piège** :
+  "rink hockey" = variante quad portugaise/espagnole jouée avec une *balle*,
+  pas un palet. Inutile pour la détection palet. Utile potentiellement pour
+  ajouter une classe `stick` ou affiner `referee`/`goalkeeper` (contexte
+  visuel indoor plus proche du RILH que la glace SHL). Dataset Roboflow :
+  `visao-computacional/roller-hockey`.
+- **SportsVision-YOLO** (forzasys-students) — YOLOv8 sur SHL, focus palet.
+  Doublon probable avec HockeyAI.
+- **sieve-data/hockey-vision-analytics** — pipeline complet GitHub qui
+  utilise un modèle palet dédié (`hockey-puck-detection.pt`) avec inference
+  slicing. Approche intéressante à reproduire si on cible la couverture
+  palet.
+- Petits modèles Roboflow (Sportobal 229 imgs, Trampoline 428 imgs, Peyton
+  Burns 57 imgs) — trop petits pour être sérieux.
+
+### Technique d'ensembling — Weighted Boxes Fusion (WBF)
+
+Méthode de référence pour combiner les sorties de N détecteurs sur la même
+frame. Contrairement à NMS qui supprime des boîtes, WBF utilise les scores
+de confiance de toutes les boîtes pour construire des boîtes moyennes
+pondérées, sans rien jeter. Pondération par modèle possible (ex: HockeyAI
+×2, modèle palet ×1).
+
+- Paper : Solovyev et al., "Weighted boxes fusion: Ensembling boxes from
+  different object detection models", Image and Vision Computing 2021.
+- Implémentation : [github.com/ZFTurbo/Weighted-Boxes-Fusion](https://github.com/ZFTurbo/Weighted-Boxes-Fusion)
+  (`pip install ensemble-boxes`). API :
+  `weighted_boxes_fusion(boxes_list, scores_list, labels_list, weights=...,
+  iou_thr=0.5, skip_box_thr=0.0001)`.
+- Point d'insertion dans notre pipeline : juste avant l'écriture de
+  `tracks.json` dans `phase1_detect_track.py`. Tout l'aval reste compatible.
+
+### Coût/bénéfice — pas une priorité actuelle
+
+Options classées du plus rentable au moins rentable :
+
+1. **`--imgsz 1280` ou `1536` avec HockeyAI seul.** Gain probable sur palet,
+   coût quasi-nul. À tester *avant* toute approche ensemble.
+2. **Re-ID clustering post-hoc sous contrainte d'équipe** — *déjà implémenté
+   en Phase 1.6*. Ciblait le vrai blocage actuel (fragmentation tracks
+   300 → ~12 entités, facteur 25). Aucun ensemble de détecteurs ne fera ça.
+3. **Fine-tune HockeyAI sur 500–1000 frames RILH annotées** (Roadmap
+   Phase 4). Battra tout ensemble de modèles ice-hockey à coup sûr.
+4. **WBF HockeyAI + détecteur palet spécialisé** (style sieve-data). Gain
+   estimé : couverture palet 42,6 % → ~55–65 %. Coût : inférence ~2×.
+   Risque secondaire : fusion peut légèrement perturber l'association
+   ByteTrack frame-à-frame. À envisager *après* Phase 4.
+5. **WBF avec rink hockey YOLOv7 pour ajouter la classe `stick`.** Pas une
+   amélioration de détection — une nouvelle capacité utile pour la détection
+   d'événements (Phase 5).
+
+L'ensembling devient pertinent une fois qu'on aura un modèle RILH-spécifique
+(Phase 4), pour le marier avec HockeyAI et combiner connaissance du domaine
+et robustesse pré-entraînée.
 
 ## Datasets (for later fine-tunes)
 No public roller-hockey CV dataset currently. Build our own:
