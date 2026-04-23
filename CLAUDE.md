@@ -247,6 +247,31 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test17 — Villeneuve vs Vierzon (Video 05) — filtre spectator multi-signal.**
+  Pipeline complet relancé. Phase 1 inchangée vs test16 (HockeyAI +
+  match-mode default, 1 puck/frame). Nouveauté Phase 1.5 : `is_static` =
+  `NOT goaltender AND (median_disp < 5px OR median_y > 0.74 ×
+  frame_height)`. Goalies exemptés du filtre (préservation des vrais
+  goalies stationnaires). Résultats :
+  * **Static tracks** : **261 / 435 (60 %)** flaggés spectator,
+    excluded de Phase 6 identify, 1.6, et annotate.
+  * **Phase 6 identify** : 1605 samples (vs 3696 test16, **-57 %
+    compute**). 16 / 174 tracks identifiés (9.2 %), 19 noms (10.9 %).
+    Numéros : #2, #77, #6, #4 — moins variés qu'avant car beaucoup de
+    tracks éliminées avant OCR.
+  * **Phase 1.6** : **20 entités** (vs 37 test16, **-46 %**).
+    Approche du compte réel attendu (2 équipes × 4-5 ≈ 10 entities/team).
+    Goalie entities : 6 (vs 5 test16, +1 — les 7 spectators-tagged-
+    goalie passent toujours le filtre, contribuent à des entités G).
+    Top-10 : 3G/7S (vs 2G/8S test16).
+  * **Vidéo finale** : 176 MB (vs 209 test16). Annotated propre.
+  * **Hallucinations TrOCR persistent au niveau entity** : entity [0]
+    `S #49 CASH`, [2] `G #2 AMOUNT`, [4] `S #79 TAX`, [6] `S #79 QTY`,
+    [7] `G #4 CASHIER`, [8] `S #69 MCAUD`. Le filtre spectator a viré
+    les tracks isolées contenant ces hallucinations, mais TrOCR continue
+    à les produire sur certains crops illisibles de vrais joueurs.
+    Stop-list = next-step P1.
+  Verdict utilisateur : revue visuelle en cours sur `debug_frames/final/`.
 - **test16 — Villeneuve vs Vierzon (Video 05) — 5 fix consolidés.** Première
   run avec `--match-mode` (top-1 puck/frame), goalie majority rule,
   entity goalie weighted by frame coverage, OCR ≥2 votes, `ocr_min_conf`
@@ -421,20 +446,21 @@ what differs from the immediate predecessor.
 (XS <30min, S ~1h, M ~1j, L ~1sem, XL >1sem). Pour les chantiers structurels
 multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
-### P0 — En cours
-- **test17** : lancer le pipeline complet avec les 4 fix v2 codés
-  (spectator filter, palet gris foncé, `--training-mode` inversion,
-  goalie bug résolu par spectator filter). Phase 1 à relancer (~1h)
-  pour profiter du mode match par défaut + couverture propre. — M
+### P0 — En attente revue visuelle test17
+- **Revue debug_frames/final/ test17** par utilisateur : valider que
+  (a) track 2 n'est plus G, (b) les 30 spectators non-goalie sont bien
+  hors render, (c) palet visible en gris foncé, (d) entités résiduelles
+  font sens. — XS
 
-### P1 — Prochain cycle (après revue test17)
-- **Itérer sur les bugs identifiés dans test17** (variable selon retours
-  utilisateur — team, OCR résiduel, false positives restants). — S–M
-- **Stop-list TrOCR** pour filtrer les hallucinations résiduelles type
-  CASHIER / QTY / TAX / ITEM / MAY (mots du training set "reçus de
-  caisse"). Complément au filtre spectator : certains vrais joueurs
-  peuvent toujours recevoir ces hallucinations si leur crop est
-  illisible. — XS
+### P1 — Après revue test17
+- **Stop-list TrOCR** pour filtrer les hallucinations résiduelles
+  (`CASHIER`, `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY`,
+  vocabulaire receipt). Implém : reject le résultat OCR si après
+  normalisation alpha il matche la stop-list. À placer dans
+  `_filter_name` de `phase6_identify.py`. **Effet attendu** : élimine
+  6 entités sur 10 du top-10 test17 qui portent ces noms. — XS
+- **Itérer sur les bugs identifiés dans test17** (team, OCR résiduel,
+  spectators tagués goalie qui passent le filtre, autres). — S–M
 
 ### P2 — Court-moyen terme
 - **Fix team classification Phase 1.5** : sur test15, 6 tracks/435 mal
