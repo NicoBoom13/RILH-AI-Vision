@@ -205,29 +205,33 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
-- **test14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps) —
-  INTERROMPU après Phase 1.5.** Premier essai avec `--model yolo26l.pt`
-  (COCO) lancé par erreur puis stoppé à la demande (l'objectif était de
-  garder HockeyAI pour la détection joueur+palet, YOLO26 seulement pour
-  les pose). Relancé proprement :
+- **test14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps).**
+  Pipeline complète, première run production de YOLO26L-pose.
   * **Phase 1** ✅ HockeyAI + ByteTrack default. 3600 frames. 435 player
     tracks (313 skaters + 122 goaltenders), 260 puck tracks, puck dans
     **1870/3600 frames (51,9 %)** — meilleur qu'test04 (42,6 %) et
-    test12 (28,6 %). Runtime ~1h wall-clock.
-    Sortie : `runs/test14/tracks.json`, `runs/test14/annotated.mp4`.
+    test12 (28,6 %). Runtime ~1h wall-clock. (Note : un premier essai
+    accidentel avec `--model yolo26l.pt` (COCO) a été stoppé pour
+    repartir sur HockeyAI.)
   * **Phase 1.5** ✅ HSV k=2 avec `--pose-model yolo26l-pose.pt` (premier
     run production de YOLO26L-pose). 282/152 split, marge 1,95,
     27 mixed-vote tracks, 1 seul track sans sample. Pose-based : 1712
     crops (vs 656 bbox-fallback) = **72 % de crops pose** contre ~57 %
     sur test13 avec yolo11n-pose → YOLO26L-pose améliore bien le taux
     de succès des keypoints sur les torses dark/blurry.
-    Sortie : `runs/test14/tracks_teams.json`, `teams_preview.png`.
-  * **Phase 6 identify** ⏸️ PAS LANCÉE. Prévu :
-    `--pose-model yolo26l-pose.pt --ocr-engine trocr`.
-  * **Phase 1.6** ⏸️ PAS LANCÉE.
-  * **Phase 6 annotate** ⏸️ PAS LANCÉE.
-  Pour reprendre : lancer les 3 commandes restantes dans cet ordre sur
-  `runs/test14/tracks.json` + `tracks_teams.json` + Video 05.
+  * **Phase 6 identify** ✅ TrOCR + yolo26l-pose. **59/435 (13,6 %)**,
+    16 groupes joueurs. Numbers trouvés (top par fragments) : #1 (10),
+    #4 (4), #2/#9/#6 (3), #77/#5/#09/#19 (2). En absolu, 59 tracks
+    identifiés > test13 (39) — vidéo plus longue + plus de tracks aide.
+  * **Phase 1.6** ✅ OSNet x0_25 + greedy merge. **435 tracks → 37
+    entités** (28 unmatched), 370 merges, 6061 paires skippées (overlap).
+    Split 25 team 0 / 12 team 1. **Anomalie** : 19/37 entités taguées
+    goaltender, dont 9 du top 10 — HockeyAI flippe massivement la classe
+    `goaltender`/`player` sur cette vidéo (limitation #2 amplifiée ici).
+  * **Phase 6 annotate** ✅ entity-aware (37 entités couvrent 407 tracks).
+    Sortie : `runs/test14/annotated_numbered.mp4`.
+  Verdict utilisateur : détections équipe + joueurs « pas mal du tout
+  mais pas parfaites ». Points de bug précis à documenter au prochain pass.
 - **test13 — Full pipeline + Phase 1.6 + TrOCR on Video 04 (France vs
   Monde, 60s, 1920×1080 @ 30fps).** Phase 1 (HockeyAI + ByteTrack default):
   167 player tracks (130 skaters + 37 goaltender fragments). Phase 1.5
