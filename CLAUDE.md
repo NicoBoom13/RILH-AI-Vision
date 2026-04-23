@@ -92,6 +92,13 @@ Two detector backends, selectable at runtime in `phase1_detect_track.py`:
 Both backends write the same `tracks.json` schema (plus a `class_name`
 string per detection), so Phases 2 and 6 are backend-agnostic.
 
+**Match vs training mode.** Phase 1 enforces 1-puck-per-frame by default
+(real match conditions): when multiple puck detections appear in the
+same frame, only the highest-confidence one is kept (after the tracker
+has assigned IDs, so the dropped duplicates simply never reach
+`tracks.json`). Pass `--training-mode` to disable the filter — useful
+for drills where multiple pucks are intentionally on the ice.
+
 ### Tracker backends (Phase 1)
 Tracker is configurable via `--tracker <yaml>`:
 - `bytetrack.yaml` (default) — motion-only, fast, fragmented on occlusions.
@@ -151,17 +158,42 @@ inference tractable):
    `--sim-threshold` (default 0.65). Re-checks overlap on the merged
    cluster each time.
 5. Output: `tracks_entities.json` with `track_ids` lists, derived
-   `team_id`/`is_goaltender`/`jersey_number`/frame ranges, plus a list
-   of unmatched singleton tracks.
+   `team_id`/`is_goaltender`/`jersey_number`/`name`/frame ranges, plus a
+   list of unmatched singleton tracks.
+
+**Spectator filter & goalie weighting** (added test16/17):
+- Phase 1.5 computes per-track **median per-frame displacement** and
+  flags tracks under 5 px as `is_static` (spectators in the stands).
+  Static tracks are excluded from Phase 6 identify (no OCR), Phase 1.6
+  (no merge), and Phase 6 annotate (no render). This collapses an entire
+  family of bugs: HockeyAI mistagging stationary spectators as
+  `goaltender`, TrOCR hallucinating receipt vocabulary off advertising
+  banners, and OSNet incorrectly merging spectator "goalies" into real
+  player entities.
+- Phase 1.5 `is_goaltender` per track now uses **majority threshold**
+  (>50 % of detections tagged `goaltender`), replacing the previous
+  `any` rule that flipped a track on a single noisy frame.
+- Phase 1.6 entity-level `is_goaltender` is **weighted by frame
+  coverage**: an entity is goalie only if more than half of its merged
+  tracks' total frame count comes from goalie-tagged tracks.
+- Phase 6 identify aggregation requires **≥2 agreeing votes** for the
+  winning number/name (singletons are usually noise — TrOCR can produce
+  a confident wrong digit on a single bad crop).
 
 Annotation (`phase6_annotate.py`):
 - Supervision-style boxes/labels/traces. Box color is **forced green or
   blue** per team.
 - **Entity-aware**: if `tracks_entities.json` exists, the label + team come
-  from the entity (so every merged fragment shares the same `#NN` and
-  colour across the video). Otherwise, per-track values from
+  from the entity (so every merged fragment shares the same `#NN`, name
+  and colour across the video). Otherwise, per-track values from
   `tracks_teams.json` + `tracks_identified.json`.
-- Labels read `#NN` when identified, `#??` otherwise.
+- Labels read `t{id} {G|S} #NN NAME` — track_id always shown (so user
+  can give frame-level feedback), `G`/`S` from `is_goaltender`, `#??`
+  if no number, name omitted if not identified.
+- **Puck**: rendered as a dark gray bbox (60,60,60) + short trace.
+  No label.
+- **Spectators**: tracks flagged `is_static` in Phase 1.5 are skipped
+  from rendering.
 
 ## Known limitations (in priority order)
 1. **Video source quality is the current bottleneck** (post test13). Torso
@@ -169,11 +201,14 @@ Annotation (`phase6_annotate.py`):
    team colour clustering margin drops when jerseys aren't sharply contrasted.
    No algorithmic fix short of fine-tuning — needs better input footage
    (stable camera, good lighting, close distance, high contrast jerseys).
-2. **Track fragmentation** is real but **partly absorbed** by Phase 1.6
-   (test13: 167 tracks → 24 entities under team + non-overlap + OCR
-   constraints). Residuals: goalies over-fragment because HockeyAI
-   intermittently flips their class between `goaltender` and `player`;
-   refs merge into the two teams (no third cluster).
+2. **Track fragmentation** is real but **largely absorbed** by Phase 1.6
+   + the spectator filter (test16: 435 tracks → 37 entities, of which
+   only 5 G after the goalie majority + frame-coverage rules; test17 to
+   confirm with the spectator filter active). HockeyAI still
+   intermittently flips goaltender/player class on individual frames,
+   but the majority threshold + frame-coverage weighting mostly
+   neutralises that. Refs still merge into the two teams (no third
+   cluster) — see #5.
 3. **Phase 3 calibration** is blocked on annotation. HockeyRink (ice) does
    not transfer to roller rinks — the model "recognises" a rink but collapses
    all 56 keypoints to a cluster instead of localising them individually.
@@ -205,6 +240,57 @@ Annotation (`phase6_annotate.py`):
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test16 — Villeneuve vs Vierzon (Video 05) — 5 fix consolidés.** Première
+  run avec `--match-mode` (top-1 puck/frame), goalie majority rule,
+  entity goalie weighted by frame coverage, OCR ≥2 votes, `ocr_min_conf`
+  0.40→0.30, `ocr_conflict_conf_floor` 0.55→0.40, palet rendu dans la
+  vidéo finale. Phase 1 rejouée (1h wall-clock), Phases 1.5/6/1.6/annotate
+  neuves. Résultats :
+  * **Palet** : 0 frame avec 2+ pucks ✓ (test15: 12.9% en avaient, max 5).
+    260 → 185 puck tracks (filtrage des faux positifs).
+  * **Goalies flag Phase 1.5** : 122 → **73 tracks** (-40%) via majority
+    rule (>50% des détections tagées goaltender).
+  * **Goalie entities Phase 1.6** : 17 → **5** (-71%) via frame-coverage
+    weighting. Top-10 passé de 9G/1S à 2G/8S.
+  * **Numéros** : 66 (test15) → 49 tracks identifiés, **noms** 96 → 66.
+    Perte de recall attendue (≥2 votes filtre noise ET signal) —
+    compensée par qualité supérieure (fin des `#3` 1-vote hallucinés).
+  * **Entités** : 36 → 37. Player groups (merge par #) : 16 → 11.
+  Verdict utilisateur sur review debug_frames : (a) track 2 encore
+  classé G sur frames 10-310 (cause: entité mergée avec 4 spectator
+  tracks taguées goalie par HockeyAI, dont 739/1348 = 54.8% des frames
+  → passait le seuil 50%) ; (b) **37 track IDs listés comme spectators**
+  (4, 6, 11, 12, 15, 30, 157, 159, 162, 186, 193, 201, 224, 246, 293,
+  319, 881, 883, 884, 992, 999, 1035, 1054, 1154, 1415, 1483, 1490,
+  1555, 1572, 1574, 1592, 1644, 1649, 1664, 1733, 1735, 1827) —
+  presque toujours taggués avec les hallucinations TrOCR `CASHIER` /
+  `CASH` / `AMOUNT` ; (c) palet gris clair (180,180,180) insuffisamment
+  visible. Fix suivants codés (non re-testé) : filter spectator par
+  median per-frame displacement < 5px (propagé Phase 1.5→6_identify→
+  1.6→annotate), palet BGR(60,60,60), inversion `--match-mode` →
+  `--training-mode` (1-puck désormais par défaut).
+- **test15 — Villeneuve vs Vierzon (Video 05) — debug mode + name OCR.**
+  Réutilise `tracks.json` + `tracks_teams.json` de test14. Ajouts dans le
+  code : name OCR (crop au-dessus du numéro, TrOCR max_new_tokens=16
+  pour noms / 6 pour numéros), `--debug-crops-dir` (2606 crops number+
+  name sauvés), `--debug-frames-dir --debug-frames-step 10` dans
+  phase6_annotate (360 PNG). Label final enrichi `t{id} {G/S} #num NAME`.
+  Résultats :
+  * Numéros : **66/435 (15.2%)** vs test14 59/435 (+12%). Noms :
+    **96/435 (21.6%)** (nouveau). 16 player groups (== test14).
+  * Entités Phase 1.6 : 36 (vs 37 test14). **17 taguées goalie** (9 du
+    top-10 en G). Anomalie confirmée.
+  * Hallucinations TrOCR identifiées : `CASHIER`, `CASH`, `AMOUNT`,
+    `TAX`, `QTY`, `ITEM`, `MAY` — vocabulaire "reçus de caisse" du
+    training set microsoft/trocr-base-printed.
+  * Debug crops + frames ont permis à l'utilisateur de catégoriser les
+    bugs : 11 frames pour goalie over-tag (27 tracks culprit, 21 Type-B
+    propagation + 6 Type-A seuil any→majority), 18 frames pour OCR
+    (6 misread + 5 missed malgré back samples + 4 entity misassignment
+    + 2 no back sample), 6 frames pour team (vote conf 0.50-1.00
+    → k-means capture mauvaise couleur, pas un floor issue), 16 pucks
+    fake (12.9% frames avec 2+ pucks, max 5 simultanés). Diagnostic
+    complet qui a mené aux 5 fix de test16.
 - **test14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps).**
   Pipeline complète, première run production de YOLO26L-pose.
   * **Phase 1** ✅ HockeyAI + ByteTrack default. 3600 frames. 435 player
@@ -321,6 +407,53 @@ what differs from the immediate predecessor.
   `supervision >=0.27` requires `tracker_id` on the `Detections` object
   itself, not just as a local variable. Fixed in `phase1_detect_track.py`
   (~line 83).
+
+## Backlog
+
+État courant des chantiers actifs, priorisé. Items concrets avec effort estimé
+(XS <30min, S ~1h, M ~1j, L ~1sem, XL >1sem). Pour les chantiers structurels
+multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
+
+### P0 — En cours
+- **test17** : lancer le pipeline complet avec les 4 fix v2 codés
+  (spectator filter, palet gris foncé, `--training-mode` inversion,
+  goalie bug résolu par spectator filter). Phase 1 à relancer (~1h)
+  pour profiter du mode match par défaut + couverture propre. — M
+
+### P1 — Prochain cycle (après revue test17)
+- **Itérer sur les bugs identifiés dans test17** (variable selon retours
+  utilisateur — team, OCR résiduel, false positives restants). — S–M
+- **Stop-list TrOCR** pour filtrer les hallucinations résiduelles type
+  CASHIER / QTY / TAX / ITEM / MAY (mots du training set "reçus de
+  caisse"). Complément au filtre spectator : certains vrais joueurs
+  peuvent toujours recevoir ces hallucinations si leur crop est
+  illisible. — XS
+
+### P2 — Court-moyen terme
+- **Fix team classification Phase 1.5** : sur test15, 6 tracks/435 mal
+  classés avec `vote_confidence` 0.50–1.00 (donc le k-means capture la
+  mauvaise couleur, pas un floor issue). Pistes par effort croissant :
+  (a) augmenter `--samples-per-track` 8 → 20 ;
+  (b) vote temporel entité-level (mode des `team_id` des membres au lieu
+  de `next(iter(team_ids))` non-déterministe) ;
+  (c) seeder centroïdes sur joueurs OCR-confiants ;
+  (d) fine-tune classifieur team. — M–L
+- **Vote temporel team entité-level seul** (option b ci-dessus) comme
+  quick-win avant le fix complet. — S
+- **WBF (Weighted Boxes Fusion)** ensemble palet HockeyAI + détecteur
+  dédié (style sieve-data). Gain attendu couverture palet 42% → 55–65%.
+  Plus utile *après* fine-tune Phase 4. — M
+
+### P3 — Long terme (cf. Roadmap)
+- **Phase 4** : fine-tune HockeyAI sur 500–1000 frames RILH annotées.
+  Bloqueur = annotation. Débloque puck + goalie + classes refs. — XL
+- **Fine-tune TrOCR** sur crops jersey RILH (numéros + noms). Élimine les
+  hallucinations receipt-style. — L
+- **Phase 3** : calibration rink + map 2D. Bloqué sur 200–300 annotations
+  keypoints rink roller. — XL
+- **Phase 5** : détection événements (buts, tirs, fautes). — XL
+- **Phase 7** : plateforme web FastAPI + Next.js. — L
+- **Phase 8+** : multi-cam stitching, live RTMP/HLS. — XL
 
 ## Roadmap
 

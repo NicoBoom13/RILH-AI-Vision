@@ -21,11 +21,13 @@ import numpy as np
 import supervision as sv
 
 PERSON_CLASS = 0
+PUCK_CLASS = 32
 
 TEAM_COLORS = [
     sv.Color(r=0, g=220, b=0),     # green — team 0
     sv.Color(r=30, g=120, b=255),  # blue  — team 1
 ]
+PUCK_COLOR = sv.Color(r=60, g=60, b=60)  # dark gray — stands out on ice
 
 
 # --- Jersey color sampling & team clustering ---------------------------------
@@ -141,11 +143,18 @@ def build_detections(boxes):
 
 
 def render(tracks_data, identified, team_of, video_path, output,
-           entity_of_tid=None, entity_by_id=None):
+           entity_of_tid=None, entity_by_id=None,
+           per_track_goalie=None, static_tids=None,
+           debug_frames_dir=None, debug_frames_step=10):
     """Render. If entity_of_tid + entity_by_id are provided, each merged
-    track inherits its entity's team_id and jersey_number so every member
-    of the same entity is drawn with the same color + label across frames.
-    Tracks outside any entity fall back to per-track team/jersey values."""
+    track inherits its entity's team_id, jersey_number, name, and
+    is_goaltender so every member of the same entity is drawn with the
+    same color + label across frames. Tracks outside any entity fall back
+    to per-track team_id (Phase 1.5), per-track jersey/name (Phase 6
+    identify), and per-track is_goaltender (Phase 1.5).
+
+    If debug_frames_dir is given, every `debug_frames_step`-th frame is
+    also written as a PNG to that folder for visual review."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -157,7 +166,13 @@ def render(tracks_data, identified, team_of, video_path, output,
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(str(output), fourcc, fps, (w, h))
 
+    if debug_frames_dir is not None:
+        debug_frames_dir.mkdir(parents=True, exist_ok=True)
+        print(f"Debug frames → {debug_frames_dir}/ (1 every {debug_frames_step})")
+
     id_tracks = identified.get("tracks", {})
+    per_track_goalie = per_track_goalie or {}
+    static_tids = static_tids or set()
     frames_map = {fr["frame"]: fr["boxes"] for fr in tracks_data["frames"]}
 
     def team_for(tid_i):
@@ -177,16 +192,35 @@ def render(tracks_data, identified, team_of, video_path, output,
         info = id_tracks.get(str(tid_i))
         return info.get("jersey_number") if info else None
 
+    def name_for(tid_i):
+        if entity_of_tid is not None:
+            eid = entity_of_tid.get(tid_i)
+            if eid is not None:
+                return entity_by_id[eid].get("name")
+        info = id_tracks.get(str(tid_i))
+        return info.get("name") if info else None
+
+    def goalie_for(tid_i):
+        if entity_of_tid is not None:
+            eid = entity_of_tid.get(tid_i)
+            if eid is not None:
+                return bool(entity_by_id[eid].get("is_goaltender", False))
+        return bool(per_track_goalie.get(tid_i, False))
+
     # One annotator trio per team, each locked to its team color
     annotators = []
     for color in TEAM_COLORS:
         annotators.append({
             "box": sv.BoxAnnotator(color=color, thickness=2),
-            "label": sv.LabelAnnotator(color=color, text_scale=0.4,
+            "label": sv.LabelAnnotator(color=color, text_scale=0.5,
                                        text_thickness=1),
             "trace": sv.TraceAnnotator(color=color, thickness=2,
                                        trace_length=30),
         })
+    # Puck annotator — neutral gray box, no label, short trace.
+    puck_box = sv.BoxAnnotator(color=PUCK_COLOR, thickness=2)
+    puck_trace = sv.TraceAnnotator(color=PUCK_COLOR, thickness=2,
+                                   trace_length=20)
 
     fi = 0
     while True:
@@ -195,7 +229,10 @@ def render(tracks_data, identified, team_of, video_path, output,
             break
         boxes = frames_map.get(fi, [])
         player_boxes = [b for b in boxes
-                        if b["class_id"] == PERSON_CLASS and b["track_id"] >= 0]
+                        if b["class_id"] == PERSON_CLASS and b["track_id"] >= 0
+                        and b["track_id"] not in static_tids]
+        puck_boxes = [b for b in boxes
+                      if b["class_id"] == PUCK_CLASS and b["track_id"] >= 0]
 
         by_team = [[], []]
         for b in player_boxes:
@@ -207,15 +244,31 @@ def render(tracks_data, identified, team_of, video_path, output,
             dets = build_detections(team_boxes)
             labels = []
             for tid in dets.tracker_id:
-                num = jersey_for(int(tid))
-                labels.append(f"#{num}" if num else "#??")
+                ti = int(tid)
+                role = "G" if goalie_for(ti) else "S"
+                num = jersey_for(ti)
+                num_str = f"#{num}" if num else "#??"
+                nm = name_for(ti)
+                parts = [f"t{ti}", role, num_str]
+                if nm:
+                    parts.append(nm)
+                labels.append(" ".join(parts))
             a = annotators[team_id]
             frame = a["box"].annotate(scene=frame, detections=dets)
             frame = a["label"].annotate(scene=frame, detections=dets,
                                         labels=labels)
             frame = a["trace"].annotate(scene=frame, detections=dets)
 
+        # Puck — gray box + short trace, no label
+        if puck_boxes:
+            puck_dets = build_detections(puck_boxes)
+            frame = puck_box.annotate(scene=frame, detections=puck_dets)
+            frame = puck_trace.annotate(scene=frame, detections=puck_dets)
+
         writer.write(frame)
+        if debug_frames_dir is not None and fi % debug_frames_step == 0:
+            cv2.imwrite(str(debug_frames_dir / f"frame_{fi:05d}.png"), frame)
+
         fi += 1
         if fi % 120 == 0:
             pct = 100 * fi / max(total, 1)
@@ -236,6 +289,11 @@ def main():
     p.add_argument("--output", required=True, help="Output MP4 path")
     p.add_argument("--color-samples", type=int, default=6,
                    help="Crops per track used to estimate jersey color")
+    p.add_argument("--debug-frames-dir", type=str, default=None,
+                   help="If set, save 1 annotated frame per --debug-frames-step "
+                        "into this folder (PNG). Useful for visual review.")
+    p.add_argument("--debug-frames-step", type=int, default=10,
+                   help="Sampling stride for debug frames (default: every 10).")
     args = p.parse_args()
 
     tracks_json = Path(args.tracks_json)
@@ -247,6 +305,8 @@ def main():
     tracks_data = json.loads(tracks_json.read_text())
     identified = json.loads(id_json.read_text())
 
+    per_track_goalie = {}
+    static_tids = set()
     teams_json_path = tracks_json.with_name("tracks_teams.json")
     if teams_json_path.exists():
         print(f"Using precomputed teams from {teams_json_path}")
@@ -254,6 +314,12 @@ def main():
         team_of = {int(tid): info["team_id"]
                    for tid, info in teams_data["tracks"].items()}
         team_colors = [tuple(c) for c in teams_data["team_centers_bgr"]]
+        per_track_goalie = {int(tid): bool(info.get("is_goaltender", False))
+                            for tid, info in teams_data["tracks"].items()}
+        static_tids = {int(tid) for tid, info in teams_data["tracks"].items()
+                       if info.get("is_static")}
+        if static_tids:
+            print(f"Filtering {len(static_tids)} spectator tracks from render")
     else:
         print("Sampling jersey colors per track…")
         colors = sample_track_colors(tracks_data, video, args.color_samples)
@@ -282,9 +348,16 @@ def main():
         print(f"  {len(entity_by_id)} entities covering "
               f"{len(entity_of_tid)} tracks")
 
+    debug_frames_dir = (Path(args.debug_frames_dir)
+                        if args.debug_frames_dir else None)
+
     print("\nRendering annotated video…")
     render(tracks_data, identified, team_of, video, output,
-           entity_of_tid=entity_of_tid, entity_by_id=entity_by_id)
+           entity_of_tid=entity_of_tid, entity_by_id=entity_by_id,
+           per_track_goalie=per_track_goalie,
+           static_tids=static_tids,
+           debug_frames_dir=debug_frames_dir,
+           debug_frames_step=args.debug_frames_step)
 
 
 if __name__ == "__main__":

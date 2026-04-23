@@ -154,9 +154,11 @@ def extract_track_embeddings(tracks_data, video_path, extractor,
 
 
 def index_phase15_phase6(teams, ids, team_conf_floor):
-    """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf).
-    Tracks with team vote_confidence < floor return team_id=None (ineligible
-    for merging into any entity with a teammate — they stay as singletons)."""
+    """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf),
+    name (+conf). Tracks with team vote_confidence < floor return
+    team_id=None (ineligible for merging into any entity with a teammate —
+    they stay as singletons). is_static tracks are filtered upstream in
+    run() so they never reach this function."""
     team_of = {}
     is_goalie = {}
     for tid_str, info in (teams or {}).get("tracks", {}).items():
@@ -167,13 +169,19 @@ def index_phase15_phase6(teams, ids, team_conf_floor):
 
     jersey = {}
     jersey_conf = {}
+    name = {}
+    name_conf = {}
     for tid_str, info in (ids or {}).get("tracks", {}).items():
+        tid = int(tid_str)
         num = info.get("jersey_number")
         if num:
-            tid = int(tid_str)
             jersey[tid] = str(num)
             jersey_conf[tid] = float(info.get("jersey_conf", 0.0))
-    return team_of, is_goalie, jersey, jersey_conf
+        nm = info.get("name")
+        if nm:
+            name[tid] = str(nm)
+            name_conf[tid] = float(info.get("name_conf", 0.0))
+    return team_of, is_goalie, jersey, jersey_conf, name, name_conf
 
 
 def build_edges(embeddings, frame_sets, team_of, is_goalie,
@@ -273,7 +281,7 @@ def greedy_merge(edges, frame_sets, tids_all, sim_threshold,
 
 
 def collect_entities(uf, frame_sets, team_of, is_goalie,
-                     jersey, jersey_conf, total_frames):
+                     jersey, jersey_conf, name, name_conf, total_frames):
     """Walk clusters → entity records."""
     by_root = defaultdict(list)
     for tid in uf.parent:
@@ -286,8 +294,15 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
         # Derive entity-level attributes
         team_ids = {team_of[t] for t in members if t in team_of}
         team_id = next(iter(team_ids)) if team_ids else None
-        # A cluster where all known-team members agree — pick that team
-        any_goalie = any(is_goalie.get(t, False) for t in members)
+        # Entity is goalie only if MORE THAN HALF the entity's frame
+        # coverage comes from goalie-tagged tracks. Counting tracks alone
+        # would let one short noisy goalie-track flip a 10-track entity;
+        # weighting by frames makes the majority track-life-aware.
+        goalie_frames = sum(len(frame_sets.get(t, frozenset()))
+                            for t in members if is_goalie.get(t, False))
+        total_member_frames = sum(len(frame_sets.get(t, frozenset()))
+                                  for t in members)
+        any_goalie = (goalie_frames / max(total_member_frames, 1)) > 0.5
 
         # Jersey: majority vote weighted by OCR confidence
         jn_votes = defaultdict(float)
@@ -299,6 +314,17 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
             jn_score = jn_votes[jn_best]
         else:
             jn_best, jn_score = None, 0.0
+
+        # Name: majority vote weighted by OCR confidence
+        nm_votes = defaultdict(float)
+        for t in members:
+            if t in name:
+                nm_votes[name[t]] += name_conf.get(t, 0.0)
+        if nm_votes:
+            nm_best = max(nm_votes, key=nm_votes.get)
+            nm_score = nm_votes[nm_best]
+        else:
+            nm_best, nm_score = None, 0.0
 
         frames_union = set()
         for t in members:
@@ -315,6 +341,8 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
             "is_goaltender": any_goalie,
             "jersey_number": jn_best,
             "jersey_score": jn_score,
+            "name": nm_best,
+            "name_score": nm_score,
             "first_frame": first_frame,
             "last_frame": last_frame,
             "total_frames_covered": covered,
@@ -366,7 +394,8 @@ def report(entities, unmatched, team_of, is_goalie):
     for i, e in enumerate(entities[:10]):
         num = f"#{e['jersey_number']}" if e["jersey_number"] else "#??"
         role = "G" if e["is_goaltender"] else "S"
-        print(f"  [{i}] team={e['team_id']} {role} {num:>4s}  "
+        nm = e.get("name") or ""
+        print(f"  [{i}] team={e['team_id']} {role} {num:>4s} {nm:<10s} "
               f"tracks={len(e['track_ids']):3d}  "
               f"frames={e['first_frame']:>4d}-{e['last_frame']:<4d}  "
               f"cover={e['coverage_pct']:>5.1f}%")
@@ -388,8 +417,19 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
     if ids is None:
         print(f"Warning: {ids_json} missing — OCR signal won't be used")
 
-    team_of, is_goalie, jersey, jersey_conf = index_phase15_phase6(
-        teams, ids, team_conf_floor
+    # Drop spectator (is_static) tracks from all downstream work — they
+    # poison entity merging (HockeyAI often mistags them as goaltender,
+    # and their near-stationary bboxes fool OSNet into matching anyone).
+    static_tids = {int(t) for t, info in teams.get("tracks", {}).items()
+                   if info.get("is_static")}
+    if static_tids:
+        for fr in tracks_data["frames"]:
+            fr["boxes"] = [b for b in fr["boxes"]
+                           if b.get("track_id") not in static_tids]
+        print(f"Excluded {len(static_tids)} spectator tracks from entity merge")
+
+    team_of, is_goalie, jersey, jersey_conf, name, name_conf = (
+        index_phase15_phase6(teams, ids, team_conf_floor)
     )
     n_eligible = sum(1 for _ in team_of)
     n_teamless = sum(
@@ -399,6 +439,7 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
     print(f"Tracks with team label (conf ≥ {team_conf_floor}): {n_eligible}, "
           f"below floor: {n_teamless}")
     print(f"Tracks with OCR number: {len(jersey)}")
+    print(f"Tracks with OCR name:   {len(name)}")
     print(f"Tagged as goaltender: {sum(1 for v in is_goalie.values() if v)}")
 
     print(f"\nLoading OSNet ({osnet_model})…")
@@ -431,7 +472,8 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
 
     entities, unmatched = collect_entities(
         uf, frame_sets, team_of, is_goalie,
-        jersey, jersey_conf, tracks_data["total_frames"],
+        jersey, jersey_conf, name, name_conf,
+        tracks_data["total_frames"],
     )
 
     issues = verify_invariants(entities, frame_sets, max_overlap_frames)
@@ -487,9 +529,12 @@ def main():
     p.add_argument("--sim-threshold", type=float, default=0.65,
                    help="Cosine similarity floor for non-OCR merges")
     p.add_argument("--ocr-bonus", type=float, default=10.0)
-    p.add_argument("--ocr-conflict-conf-floor", type=float, default=0.55,
+    p.add_argument("--ocr-conflict-conf-floor", type=float, default=0.40,
                    help="If both tracks carry confident but different numbers, "
-                        "reject the pair.")
+                        "reject the pair. Lowered to 0.40 (was 0.55) — stricter "
+                        "merge gating prevents two different players (with "
+                        "moderately confident but conflicting OCR) from ending "
+                        "up in the same entity.")
     p.add_argument("--goalie-bonus", type=float, default=0.05)
     p.add_argument("--team-conf-floor", type=float, default=0.67,
                    help="Drop tracks below this Phase 1.5 vote-confidence "

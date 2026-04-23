@@ -82,6 +82,7 @@ def run(
     imgsz: int,
     hockey_mode: bool,
     tracker: str,
+    training_mode: bool = False,
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated.mp4"
@@ -100,6 +101,12 @@ def run(
     print(f"Backend: {'HockeyAI' if hockey_mode else 'YOLO11 COCO'}")
     print(f"Model: {model_name}, conf={conf}, imgsz={imgsz}")
     print(f"Tracker: {tracker}")
+    if training_mode:
+        print("Training mode: keeping ALL puck detections per frame "
+              "(multi-puck drills)")
+    else:
+        print("Match mode (default): keeping only the highest-confidence "
+              "puck per frame")
 
     model = YOLO(model_name)
 
@@ -155,6 +162,28 @@ def run(
                     labels_native = [HOCKEY_CLASS_MAP[cid][1] for cid in native_ids]
             else:
                 labels_native = [model.names[cid] for cid in detections.class_id]
+
+            # Default (match mode): keep only the highest-confidence puck
+            # per frame — a real match has exactly 1 puck on the ice, so
+            # extra detections are false positives (shadows, pads, sticks,
+            # spectator objects). Player + goaltender detections pass
+            # through untouched. Done AFTER the tracker so puck tracks
+            # already have IDs assigned; the dropped duplicates simply
+            # never reach tracks.json.
+            # --training-mode disables this filter (e.g. drills with
+            # multiple pucks on the ice at once).
+            if not training_mode and len(detections) > 0:
+                puck_mask = detections.class_id == PUCK_CLASS
+                if puck_mask.sum() > 1:
+                    puck_confs = detections.confidence[puck_mask]
+                    puck_idx = np.where(puck_mask)[0]
+                    keep_puck = puck_idx[np.argmax(puck_confs)]
+                    drop = np.zeros(len(detections), dtype=bool)
+                    drop[puck_idx] = True
+                    drop[keep_puck] = False
+                    keep = ~drop
+                    detections = detections[keep]
+                    labels_native = [labels_native[i] for i in range(len(keep)) if keep[i]]
 
             tracker_ids = detections.tracker_id
 
@@ -226,6 +255,14 @@ def main():
     parser.add_argument("--conf", type=float, default=0.3, help="Detection confidence threshold")
     parser.add_argument("--imgsz", type=int, default=1280,
                         help="Inference image size — bigger helps puck detection")
+    parser.add_argument("--training-mode", action="store_true",
+                        help="Disable the default 1-puck-per-frame filter. "
+                             "By default Phase 1 assumes match conditions "
+                             "(exactly 1 puck on the ice) and keeps only "
+                             "the highest-confidence puck per frame, "
+                             "dropping false positives. Pass --training-mode "
+                             "to keep every puck detection — useful for "
+                             "drills where multiple pucks are in play at once.")
     args = parser.parse_args()
 
     if args.hockey_model:
@@ -236,7 +273,7 @@ def main():
     run(
         Path(args.video), Path(args.output), model_name,
         args.conf, args.imgsz, hockey_mode=args.hockey_model,
-        tracker=args.tracker,
+        tracker=args.tracker, training_mode=args.training_mode,
     )
 
 

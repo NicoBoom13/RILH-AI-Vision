@@ -82,23 +82,11 @@ def orientation_from_kps(kp_xy, kp_conf, thr=0.3):
     return "side"
 
 
-def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3,
-                    y_top_frac=0.15, y_bot_frac=0.65, x_pad_ratio=0.30):
-    """Crop the dorsal number band — the rectangle where the back number
-    actually sits.
-
-    Vertical range: `y_top_frac` → `y_bot_frac` of the shoulder-to-hip span
-    (default 15–65 %, i.e. the upper half of the torso where the number is
-    centred — NOT the full torso).
-
-    Horizontal range: shoulder-width inflated by `x_pad_ratio` on each side
-    (default 30 %) to catch wide digits without cutting off edges.
-
-    This tight band has an aspect ratio (w:h) close to 2:1 instead of the
-    ~0.8:1 of the old full-torso crop, which is much closer to what PARSeq
-    expects (4:1 = 128:32). The remaining 2× discrepancy is absorbed by
-    letterbox padding inside ParseqOCR.read_batch, so PARSeq never sees a
-    horizontally-stretched digit."""
+def _torso_band_crop(frame, kp_xy, kp_conf, y_top_frac, y_bot_frac,
+                     thr=0.3, x_pad_ratio=0.30):
+    """Crop a horizontal band of the back, between two fractions of the
+    shoulder-to-hip span. Shared by torso_back_crop (number) and
+    torso_back_name_crop (name plate above the number)."""
     shos_ok = kp_conf[KP_LSHO] > thr and kp_conf[KP_RSHO] > thr
     hips_ok = kp_conf[KP_LHIP] > thr and kp_conf[KP_RHIP] > thr
     if not shos_ok:
@@ -119,6 +107,40 @@ def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3,
     x1 = sho_cx - half_w
     x2 = sho_cx + half_w
     return safe_crop(frame, [x1, y1, x2, y2])
+
+
+def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3,
+                    y_top_frac=0.15, y_bot_frac=0.65, x_pad_ratio=0.30):
+    """Crop the dorsal number band — the rectangle where the back number
+    actually sits.
+
+    Vertical range: `y_top_frac` → `y_bot_frac` of the shoulder-to-hip span
+    (default 15–65 %, i.e. the upper half of the torso where the number is
+    centred — NOT the full torso).
+
+    Horizontal range: shoulder-width inflated by `x_pad_ratio` on each side
+    (default 30 %) to catch wide digits without cutting off edges.
+
+    This tight band has an aspect ratio (w:h) close to 2:1 instead of the
+    ~0.8:1 of the old full-torso crop, which is much closer to what PARSeq
+    expects (4:1 = 128:32). The remaining 2× discrepancy is absorbed by
+    letterbox padding inside ParseqOCR.read_batch, so PARSeq never sees a
+    horizontally-stretched digit."""
+    return _torso_band_crop(frame, kp_xy, kp_conf,
+                            y_top_frac, y_bot_frac, thr, x_pad_ratio)
+
+
+def torso_back_name_crop(frame, kp_xy, kp_conf, thr=0.3,
+                         y_top_frac=-0.05, y_bot_frac=0.18,
+                         x_pad_ratio=0.30):
+    """Crop the dorsal name plate — the band ABOVE the number where the
+    player's surname is printed.
+
+    Vertical range: -5 % to +18 % of the shoulder-to-hip span. The slight
+    overshoot above the shoulder line catches names that arch upward; the
+    bottom stops just before the number band starts (15 %)."""
+    return _torso_band_crop(frame, kp_xy, kp_conf,
+                            y_top_frac, y_bot_frac, thr, x_pad_ratio)
 
 
 def ious(xyxy, boxes):
@@ -152,7 +174,12 @@ class TrOCR_OCR:
                       .to(device).eval())
 
     @torch.no_grad()
-    def read_batch(self, bgr_crops):
+    def read_batch(self, bgr_crops, max_new_tokens=16):
+        """Return list of (raw_text, confidence) per crop. The caller can
+        tune max_new_tokens to match the expected text length — too high
+        for digit OCR and TrOCR will sometimes produce strings that fail
+        the 1-2 digit filter; too low for name OCR and surnames get
+        truncated."""
         if not bgr_crops:
             return []
         pil_imgs = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))
@@ -162,16 +189,13 @@ class TrOCR_OCR:
         ).pixel_values.to(self.device)
         gen = self.model.generate(
             pixel_values,
-            max_new_tokens=6,
+            max_new_tokens=max_new_tokens,
             output_scores=True,
             return_dict_in_generate=True,
         )
         sequences = gen.sequences
         texts = self.processor.batch_decode(sequences, skip_special_tokens=True)
 
-        # Per-sample confidence = mean softmax prob of the chosen tokens
-        # across the n_gen steps. Sequences start with decoder_start_token at
-        # position 0; token at step i is sequences[:, i + 1].
         import torch.nn.functional as F
         if gen.scores:
             step_probs = []
@@ -183,14 +207,7 @@ class TrOCR_OCR:
         else:
             confs = [1.0] * len(pil_imgs)
 
-        out = []
-        for text, conf in zip(texts, confs):
-            digits = "".join(ch for ch in text if ch.isdigit())
-            if 1 <= len(digits) <= 2:
-                out.append((digits, float(conf)))
-            else:
-                out.append(("", 0.0))
-        return out
+        return [(text, float(conf)) for text, conf in zip(texts, confs)]
 
 
 class ParseqOCR:
@@ -244,8 +261,8 @@ class ParseqOCR:
 
     @torch.no_grad()
     def read_batch(self, bgr_crops):
-        """Return list of (digit_string, confidence) per crop. Empty string
-        means no digit found or low confidence."""
+        """Return list of (raw_text, confidence) per crop. Filtering is the
+        caller's job (digits for numbers, alpha for names)."""
         if not bgr_crops:
             return []
         letterboxed = [
@@ -260,11 +277,7 @@ class ParseqOCR:
         out = []
         for text, conf in zip(preds, confs):
             conf_val = float(conf.mean()) if hasattr(conf, "mean") else float(conf)
-            digits = "".join(ch for ch in text if ch.isdigit())
-            if 1 <= len(digits) <= 2:
-                out.append((digits, conf_val))
-            else:
-                out.append(("", 0.0))
+            out.append((text, conf_val))
         return out
 
 
@@ -353,6 +366,24 @@ def merge_tracks_by_number(enriched, by_tid):
     return merged_groups
 
 
+def _filter_number(text: str) -> str:
+    """Keep digits only, return when length is 1-2 (jersey numbers)."""
+    digits = "".join(c for c in text if c.isdigit())
+    return digits if 1 <= len(digits) <= 2 else ""
+
+
+def _filter_name(text: str) -> str:
+    """Keep alphabetic chars only, uppercase, return when length is 3-15
+    (typical surname range on a hockey jersey)."""
+    alpha = "".join(c for c in text if c.isalpha())
+    return alpha.upper() if 3 <= len(alpha) <= 15 else ""
+
+
+def _safe_filename(s: str) -> str:
+    """Strip filesystem-hostile characters from a debug-crop filename."""
+    return "".join(c if c.isalnum() or c in "-_" else "_" for c in s)[:32]
+
+
 def run(
     tracks_json: Path,
     video_path: Path,
@@ -363,6 +394,8 @@ def run(
     pose_imgsz: int,
     ocr_batch_size: int,
     ocr_engine: str = "parseq",
+    debug_crops_dir: Path | None = None,
+    teams_json: Path | None = None,
 ):
     device = pick_device()
     print(f"Device: {device}")
@@ -370,6 +403,21 @@ def run(
     tracks_data = json.loads(tracks_json.read_text())
     by_tid = group_detections_by_track(tracks_data)
     print(f"Player tracks: {len(by_tid)}")
+
+    # If Phase 1.5's tracks_teams.json is available, pre-filter out
+    # `is_static` tracks (spectators in the stands). OCR on them is
+    # pure noise — TrOCR hallucinates receipt vocabulary off advertising
+    # banners / scoreboard text, polluting entity names downstream.
+    static_tids = set()
+    if teams_json is not None and teams_json.exists():
+        teams_data = json.loads(teams_json.read_text())
+        static_tids = {int(t) for t, info in teams_data.get("tracks", {}).items()
+                       if info.get("is_static")}
+        if static_tids:
+            n_before = len(by_tid)
+            by_tid = {tid: v for tid, v in by_tid.items() if tid not in static_tids}
+            print(f"Skipping {n_before - len(by_tid)} static (spectator) tracks — "
+                  f"OCR will run on {len(by_tid)} moving tracks only")
 
     samples = pick_samples(by_tid, samples_per_track)
     frame_work = defaultdict(list)  # frame_idx -> [(tid, xyxy)]
@@ -389,21 +437,66 @@ def run(
         ocr = ParseqOCR(device=device)
     print(f"OCR engine: {ocr_engine}")
 
-    # sample_results[tid] = [{"frame", "orient", "number", "conf"}, ...]
+    if debug_crops_dir is not None:
+        (debug_crops_dir / "numbers").mkdir(parents=True, exist_ok=True)
+        (debug_crops_dir / "names").mkdir(parents=True, exist_ok=True)
+        print(f"Debug crops → {debug_crops_dir}/")
+
+    # sample_results[tid] = [{"frame", "orient",
+    #                        "number", "number_conf", "number_raw",
+    #                        "name",   "name_conf",   "name_raw"}, ...]
     sample_results = defaultdict(list)
 
-    # Collect back-crops across many tracks to run PARSeq in batches
+    # Mixed batch: number crops AND name crops queued together. The 'kind'
+    # tag in pending_meta tells the flusher which filter to apply.
     pending_crops = []
-    pending_meta = []  # (tid, sample_idx)
+    pending_meta = []  # (tid, sample_idx, kind, frame_idx)
 
     def flush_ocr():
         if not pending_crops:
             return
-        results = ocr.read_batch(pending_crops)
-        for (tid, idx), (digits, conf) in zip(pending_meta, results):
-            if digits and conf >= ocr_min_conf:
-                sample_results[tid][idx]["number"] = digits
-                sample_results[tid][idx]["ocr_conf"] = conf
+
+        # Split by kind: numbers need a tight token budget (long strings
+        # would fail the 1-2 digit filter), names need a wider budget.
+        num_idx, name_idx = [], []
+        for i, (_, _, kind, _) in enumerate(pending_meta):
+            (num_idx if kind == "number" else name_idx).append(i)
+
+        results = [None] * len(pending_meta)
+        if num_idx:
+            num_crops = [pending_crops[i] for i in num_idx]
+            kw = {"max_new_tokens": 6} if isinstance(ocr, TrOCR_OCR) else {}
+            for j, r in zip(num_idx, ocr.read_batch(num_crops, **kw)):
+                results[j] = r
+        if name_idx:
+            name_crops = [pending_crops[i] for i in name_idx]
+            kw = {"max_new_tokens": 16} if isinstance(ocr, TrOCR_OCR) else {}
+            for j, r in zip(name_idx, ocr.read_batch(name_crops, **kw)):
+                results[j] = r
+
+        for (tid, idx, kind, fi), crop, (raw_text, conf) in zip(
+                pending_meta, pending_crops, results):
+            if kind == "number":
+                kept = _filter_number(raw_text)
+                if kept and conf >= ocr_min_conf:
+                    sample_results[tid][idx]["number"] = kept
+                    sample_results[tid][idx]["number_conf"] = conf
+                sample_results[tid][idx]["number_raw"] = raw_text
+            else:  # name
+                kept = _filter_name(raw_text)
+                if kept and conf >= ocr_min_conf:
+                    sample_results[tid][idx]["name"] = kept
+                    sample_results[tid][idx]["name_conf"] = conf
+                sample_results[tid][idx]["name_raw"] = raw_text
+
+            if debug_crops_dir is not None:
+                fname = (
+                    f"t{tid:04d}_f{fi:05d}"
+                    f"_{kind[:3]}-{_safe_filename(kept) or 'X'}"
+                    f"_c{int(round(conf * 100)):02d}.png"
+                )
+                cv2.imwrite(str(debug_crops_dir / f"{kind}s" / fname), crop)
+
         pending_crops.clear()
         pending_meta.clear()
 
@@ -430,7 +523,8 @@ def run(
             idx = len(sample_results[tid])
             sample_results[tid].append({
                 "frame": fi, "orient": "unknown",
-                "number": None, "ocr_conf": 0.0,
+                "number": None, "number_conf": 0.0, "number_raw": None,
+                "name": None,   "name_conf": 0.0,   "name_raw": None,
             })
 
             matched = -1
@@ -452,12 +546,18 @@ def run(
                 n_processed += 1
                 continue
 
-            tbc = torso_back_crop(frame, kp_xy, kp_conf)
-            if tbc is not None and min(tbc.shape[:2]) >= 16:
-                pending_crops.append(tbc)
-                pending_meta.append((tid, idx))
-                if len(pending_crops) >= ocr_batch_size:
-                    flush_ocr()
+            num_crop = torso_back_crop(frame, kp_xy, kp_conf)
+            if num_crop is not None and min(num_crop.shape[:2]) >= 16:
+                pending_crops.append(num_crop)
+                pending_meta.append((tid, idx, "number", fi))
+
+            name_crop = torso_back_name_crop(frame, kp_xy, kp_conf)
+            if name_crop is not None and min(name_crop.shape[:2]) >= 12:
+                pending_crops.append(name_crop)
+                pending_meta.append((tid, idx, "name", fi))
+
+            if len(pending_crops) >= ocr_batch_size:
+                flush_ocr()
 
             n_processed += 1
             if n_processed % 200 == 0:
@@ -471,18 +571,40 @@ def run(
         orient_counts = Counter(s["orient"] for s in srs)
         back_count = orient_counts.get("back", 0)
 
-        votes = Counter()
-        conf_by_num = defaultdict(list)
+        num_votes = Counter()
+        num_conf_acc = defaultdict(list)
+        name_votes = Counter()
+        name_conf_acc = defaultdict(list)
         for s in srs:
             if s["number"]:
-                votes[s["number"]] += 1
-                conf_by_num[s["number"]].append(s["ocr_conf"])
+                num_votes[s["number"]] += 1
+                num_conf_acc[s["number"]].append(s["number_conf"])
+            if s["name"]:
+                name_votes[s["name"]] += 1
+                name_conf_acc[s["name"]].append(s["name_conf"])
 
-        if votes:
-            jn, n = votes.most_common(1)[0]
-            jersey_conf = float(np.mean(conf_by_num[jn]))
+        # Require ≥2 agreeing votes for the winning number/name. Single
+        # high-conf votes are too often noise — TrOCR can hallucinate a
+        # confident wrong digit on a single bad crop, and one stray vote
+        # would otherwise stamp the whole track with a fake number.
+        MIN_VOTES = 2
+        if num_votes:
+            jn, jn_count = num_votes.most_common(1)[0]
+            if jn_count >= MIN_VOTES:
+                jersey_conf = float(np.mean(num_conf_acc[jn]))
+            else:
+                jn, jersey_conf = None, 0.0
         else:
-            jn, n, jersey_conf = None, 0, 0.0
+            jn, jersey_conf = None, 0.0
+
+        if name_votes:
+            nm, nm_count = name_votes.most_common(1)[0]
+            if nm_count >= MIN_VOTES:
+                name_conf = float(np.mean(name_conf_acc[nm]))
+            else:
+                nm, name_conf = None, 0.0
+        else:
+            nm, name_conf = None, 0.0
 
         enriched[str(tid)] = {
             "n_detections_total": len(by_tid[tid]),
@@ -490,8 +612,11 @@ def run(
             "back_samples": back_count,
             "orientation_counts": dict(orient_counts),
             "jersey_number": jn,
-            "jersey_votes": dict(votes),
+            "jersey_votes": dict(num_votes),
             "jersey_conf": jersey_conf,
+            "name": nm,
+            "name_votes": dict(name_votes),
+            "name_conf": name_conf,
             "class_name": by_tid[tid][0].get("class_name", "player"),
         }
 
@@ -503,16 +628,19 @@ def run(
         "samples_per_track": samples_per_track,
         "ocr_min_conf": ocr_min_conf,
         "pose_model": pose_path,
-        "ocr_model": "parseq",
+        "ocr_model": ocr_engine,
         "tracks": enriched,
         "player_groups": merged_groups,
     }
     output_path.write_text(json.dumps(output, indent=2))
 
     n_numbered = sum(1 for t in enriched.values() if t["jersey_number"])
+    n_named = sum(1 for t in enriched.values() if t["name"])
     print(f"\nDone.\n  Output: {output_path}")
-    print(f"  Tracks identified: {n_numbered}/{len(enriched)} "
+    print(f"  Tracks with number: {n_numbered}/{len(enriched)} "
           f"({100*n_numbered/max(len(enriched),1):.1f}%)")
+    print(f"  Tracks with name:   {n_named}/{len(enriched)} "
+          f"({100*n_named/max(len(enriched),1):.1f}%)")
     print(f"  Player groups (merged tracks): {len(merged_groups)}")
     if merged_groups:
         for g in sorted(merged_groups, key=lambda x: -len(x["track_ids"]))[:10]:
@@ -534,25 +662,45 @@ def main():
                         "yolo26l-pose.pt (YOLO26 large pose, ~55MB, newer "
                         "architecture). Auto-downloaded into models/.")
     p.add_argument("--samples-per-track", type=int, default=15)
-    p.add_argument("--ocr-min-conf", type=float, default=0.4)
+    p.add_argument("--ocr-min-conf", type=float, default=0.30,
+                   help="Per-sample minimum OCR confidence to count toward "
+                        "the per-track vote. Lowered from 0.40 to 0.30 — many "
+                        "tracks have 10+ back-facing samples but every single "
+                        "OCR result lands at 0.30-0.39, so the previous floor "
+                        "discarded all of them. The ≥2 votes aggregation rule "
+                        "now does the bulk of the noise rejection downstream.")
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--ocr-batch", type=int, default=32)
     p.add_argument("--ocr-engine", choices=["parseq", "trocr"], default="parseq",
                    help="OCR engine. parseq = PARSeq via torch.hub (fast). "
                         "trocr = Microsoft TrOCR base-printed (heavier ~340MB, "
                         "more robust on difficult / small / angled text).")
+    p.add_argument("--debug-crops-dir", type=str, default=None,
+                   help="If set, save every OCR'd crop into "
+                        "<dir>/numbers/ and <dir>/names/ with a filename "
+                        "encoding track_id, frame, OCR result and confidence.")
+    p.add_argument("--teams-json", type=str, default=None,
+                   help="Optional path to Phase 1.5 tracks_teams.json. If "
+                        "provided, tracks flagged is_static (spectators) are "
+                        "excluded from OCR. Default: auto-discover "
+                        "<tracks_dir>/tracks_teams.json.")
     args = p.parse_args()
 
     tracks_json = Path(args.tracks_json)
     video = Path(args.video)
     output = (Path(args.output) if args.output
               else tracks_json.with_name("tracks_identified.json"))
+    debug_dir = Path(args.debug_crops_dir) if args.debug_crops_dir else None
+    teams = (Path(args.teams_json) if args.teams_json
+             else tracks_json.with_name("tracks_teams.json"))
 
     run(
         tracks_json, video, output,
         args.pose_model, args.samples_per_track, args.ocr_min_conf,
         args.pose_imgsz, args.ocr_batch,
         ocr_engine=args.ocr_engine,
+        debug_crops_dir=debug_dir,
+        teams_json=teams,
     )
 
 

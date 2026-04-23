@@ -182,17 +182,61 @@ def group_detections_by_track(tracks_data):
     return by_tid
 
 
-def goaltender_tids(tracks_data):
-    """Return the set of track_ids whose detections are ever tagged
-    class_name='goaltender' (HockeyAI backend). These tracks are excluded
-    from centroid fitting so goalie pads don't pull the skater team center."""
-    tids = set()
+def goaltender_tids(tracks_data, threshold=0.5):
+    """Return the set of track_ids where MORE THAN `threshold` fraction of
+    detections are tagged class_name='goaltender' (HockeyAI backend).
+
+    Strict majority by default — a few mis-tagged frames in an otherwise-
+    player track no longer flip the entire track to goalie. The previous
+    `any` rule was poisoning entities downstream (Phase 1.6 propagated
+    the goalie tag to every other player merged into the same entity)."""
+    from collections import defaultdict
+    counts = defaultdict(lambda: [0, 0])  # tid -> [n_player, n_goalie]
     for fr in tracks_data["frames"]:
         for b in fr["boxes"]:
-            if (b["class_id"] == PERSON_CLASS and b["track_id"] >= 0
-                    and b.get("class_name") == "goaltender"):
-                tids.add(b["track_id"])
-    return tids
+            if b["class_id"] != PERSON_CLASS or b["track_id"] < 0:
+                continue
+            if b.get("class_name") == "goaltender":
+                counts[b["track_id"]][1] += 1
+            else:
+                counts[b["track_id"]][0] += 1
+    return {tid for tid, (np_, ng) in counts.items()
+            if ng / max(np_ + ng, 1) > threshold}
+
+
+def static_track_metrics(tracks_data):
+    """Per-track median per-frame displacement (in pixels). Returns
+    {tid: median_disp}. Spectators in the stands have very small per-frame
+    movement (< 5 px); a real skater's median is typically 10-40 px.
+
+    We use the MEDIAN rather than total span because tracker ID swaps
+    cause spectator tracks to occasionally jump across the frame —
+    inflating their max span — but the bulk of consecutive frames remain
+    near-stationary, so the median stays small."""
+    from collections import defaultdict
+    pos = defaultdict(list)  # tid -> [(frame, cx, cy), ...]
+    for fr in tracks_data["frames"]:
+        fi = fr["frame"]
+        for b in fr["boxes"]:
+            if b["class_id"] != PERSON_CLASS or b["track_id"] < 0:
+                continue
+            xy = b["xyxy"]
+            pos[b["track_id"]].append((fi, (xy[0] + xy[2]) / 2,
+                                       (xy[1] + xy[3]) / 2))
+    out = {}
+    for tid, points in pos.items():
+        if len(points) < 2:
+            out[tid] = 0.0
+            continue
+        points.sort(key=lambda p: p[0])
+        disps = []
+        for i in range(1, len(points)):
+            dx = points[i][1] - points[i - 1][1]
+            dy = points[i][2] - points[i - 1][2]
+            disps.append((dx * dx + dy * dy) ** 0.5)
+        disps.sort()
+        out[tid] = disps[len(disps) // 2]
+    return out
 
 
 def stream_needed_frames(video_path, indices):
@@ -436,8 +480,15 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
     }
     goalie_tids = goaltender_tids(tracks_data)
     skater_tids = all_tids - goalie_tids
+
+    median_disp = static_track_metrics(tracks_data)
+    static_threshold_px = 5.0
+    static_tids = {tid for tid, md in median_disp.items()
+                   if md < static_threshold_px and tid in all_tids}
     print(f"Total player tracks in {tracks_json.name}: {len(all_tids)} "
           f"(skaters {len(skater_tids)}, goaltenders {len(goalie_tids)})")
+    print(f"Static tracks (median per-frame disp < {static_threshold_px}px): "
+          f"{len(static_tids)} — treated as spectators, excluded downstream")
 
     pose_path = str(resolve_yolo_path(pose_model_name))
     print(f"Loading pose model: {pose_path}")
@@ -493,6 +544,7 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
         ),
         "team_centers_bgr": [list(c) for c in centers],
         "cluster_margin": margin,
+        "static_threshold_px": static_threshold_px,
         "tracks": {
             str(tid): {
                 "team_id": team_of[tid],
@@ -503,6 +555,8 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
                 ),
                 "n_color_samples": len(crops_by_tid[tid]["crop_colors"]),
                 "is_goaltender": tid in goalie_tids,
+                "is_static": tid in static_tids,
+                "median_disp_px": round(median_disp.get(tid, 0.0), 2),
             }
             for tid in crops_by_tid
         },
