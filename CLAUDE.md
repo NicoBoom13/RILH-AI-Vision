@@ -163,13 +163,20 @@ inference tractable):
 
 **Spectator filter & goalie weighting** (added test16/17):
 - Phase 1.5 computes per-track **median per-frame displacement** and
-  flags tracks under 5 px as `is_static` (spectators in the stands).
-  Static tracks are excluded from Phase 6 identify (no OCR), Phase 1.6
-  (no merge), and Phase 6 annotate (no render). This collapses an entire
-  family of bugs: HockeyAI mistagging stationary spectators as
-  `goaltender`, TrOCR hallucinating receipt vocabulary off advertising
-  banners, and OSNet incorrectly merging spectator "goalies" into real
-  player entities.
+  **median bbox-center y**, then flags `is_static` =
+  `NOT is_goaltender AND (median_disp < 5 px OR median_y > 0.74 ×
+  frame_height)`. Goalie-tagged tracks are NEVER filtered — real
+  goalies are inherently low-motion (they crouch in the crease) and
+  often fit the spectator y-band, so dropping them removes the goalie
+  from the rendered video. The 7 user-confirmed spectators that
+  HockeyAI mistags as goalies (~10% of all goalie-flagged tracks on
+  test16) leak through this filter and need a complementary stop-list /
+  fine-tune fix (P1 backlog). Static tracks are excluded from Phase 6
+  identify (no OCR), Phase 1.6 (no merge), and Phase 6 annotate (no
+  render). This collapses an entire family of bugs: HockeyAI mistagging
+  stationary spectators as `player` then merging into player entities,
+  TrOCR hallucinating receipt vocabulary off advertising banners, and
+  OSNet matching spectator "players" against real-player tracks.
 - Phase 1.5 `is_goaltender` per track now uses **majority threshold**
   (>50 % of detections tagged `goaltender`), replacing the previous
   `any` rule that flipped a track on a single noisy frame.
