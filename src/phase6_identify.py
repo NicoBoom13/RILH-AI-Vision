@@ -281,7 +281,7 @@ class ParseqOCR:
         return out
 
 
-class EnsembleOCR:
+class TogetherOCR:
     """Confidence-weighted vote between PARSeq + TrOCR (Strategy 2).
 
     Each crop is fed to BOTH engines. We then compare their cleaned
@@ -470,8 +470,8 @@ def run(
 
     if ocr_engine == "trocr":
         ocr = TrOCR_OCR(device=device)
-    elif ocr_engine == "ensemble":
-        ocr = EnsembleOCR(device=device)
+    elif ocr_engine == "together":
+        ocr = TogetherOCR(device=device)
     else:
         ocr = ParseqOCR(device=device)
     print(f"OCR engine: {ocr_engine}")
@@ -503,12 +503,12 @@ def run(
 
         # Per-kind dispatch: TrOCR needs different max_new_tokens budgets
         # (6 for digits, 16 for names) to keep digit recall up; PARSeq has
-        # no such knob; EnsembleOCR also needs the kind to combine
+        # no such knob; TogetherOCR also needs the kind to combine
         # outputs after each engine's own filter.
         def _read(crops, kind, max_tokens):
             if isinstance(ocr, TrOCR_OCR):
                 return ocr.read_batch(crops, max_new_tokens=max_tokens)
-            if isinstance(ocr, EnsembleOCR):
+            if isinstance(ocr, TogetherOCR):
                 return ocr.read_batch(crops, kind=kind,
                                       max_new_tokens=max_tokens)
             return ocr.read_batch(crops)
@@ -721,11 +721,11 @@ def main():
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--ocr-batch", type=int, default=32)
     p.add_argument("--ocr-engine",
-                   choices=["parseq", "trocr", "ensemble"], default="parseq",
+                   choices=["parseq", "trocr", "together"], default="parseq",
                    help="OCR engine. parseq = PARSeq via torch.hub (fast). "
                         "trocr = Microsoft TrOCR base-printed (heavier ~340MB, "
                         "more robust on difficult / small / angled text). "
-                        "ensemble = both engines + confidence-weighted vote: "
+                        "together = both engines + confidence-weighted vote: "
                         "agreement bonus +0.10, solo result penalty ×0.7, "
                         "conflict rejected — kills model-specific "
                         "hallucinations (e.g. TrOCR's CASHIER/AMOUNT receipt "

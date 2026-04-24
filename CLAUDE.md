@@ -135,11 +135,11 @@ inference tractable):
 5. **Letterbox-pad** the crop to the OCR engine's expected aspect (1:4 h:w
    for PARSeq's 32×128) before inference — avoids horizontal stretching
    of digits that used to cause 6↔7 and 0↔6 confusions.
-6. Run OCR (`--ocr-engine {parseq,trocr,ensemble}`):
+6. Run OCR (`--ocr-engine {parseq,trocr,together}`):
    - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`)
    - **TrOCR** (`microsoft/trocr-base-printed`, via `transformers`+
      `sentencepiece`): heavier (~340 MB) but ~2× recall on difficult text.
-   - **Ensemble** (PARSeq + TrOCR, confidence-weighted vote): both engines
+   - **Together** (PARSeq + TrOCR, confidence-weighted vote): both engines
      run on every crop; outputs combined per-crop with `_filter_*`
      applied per side, then: agree → bonus +0.10, solo → ×0.7 penalty,
      conflict → reject. Different training sets (PARSeq = scene text,
@@ -458,7 +458,7 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
 ### P0 — Prochaine itération
 - **Pipeline test18** : pipeline complet sans le filtre spectator
-  (retiré) avec `--ocr-engine ensemble` (PARSeq + TrOCR cross-check).
+  (retiré) avec `--ocr-engine together` (PARSeq + TrOCR cross-check).
   Sert de baseline propre pour mesurer Phase 3 quand elle arrivera,
   valider que les wins v2 tiennent hors filtre spectator, et mesurer
   l'effet de l'ensembling sur les hallucinations TrOCR. Phase 1 ~1h. — M
