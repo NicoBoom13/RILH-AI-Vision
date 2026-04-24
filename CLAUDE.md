@@ -135,10 +135,18 @@ inference tractable):
 5. **Letterbox-pad** the crop to the OCR engine's expected aspect (1:4 h:w
    for PARSeq's 32×128) before inference — avoids horizontal stretching
    of digits that used to cause 6↔7 and 0↔6 confusions.
-6. Run OCR (`--ocr-engine {parseq,trocr}`):
+6. Run OCR (`--ocr-engine {parseq,trocr,ensemble}`):
    - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`)
    - **TrOCR** (`microsoft/trocr-base-printed`, via `transformers`+
      `sentencepiece`): heavier (~340 MB) but ~2× recall on difficult text.
+   - **Ensemble** (PARSeq + TrOCR, confidence-weighted vote): both engines
+     run on every crop; outputs combined per-crop with `_filter_*`
+     applied per side, then: agree → bonus +0.10, solo → ×0.7 penalty,
+     conflict → reject. Different training sets (PARSeq = scene text,
+     TrOCR = printed receipts) produce different failure modes, so
+     model-specific hallucinations (TrOCR's `CASHIER`/`AMOUNT`/`TAX` on
+     noisy crops) are caught when PARSeq doesn't echo them. Cost: ~2×
+     inference and ~390 MB GPU memory.
 7. Keep digits only, 1–2 chars. **Vote** per track; the jersey number is
    the majority winner.
 8. **Merge** tracks that share the same confident number and don't overlap
@@ -450,17 +458,17 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
 ### P0 — Prochaine itération
 - **Pipeline test18** : pipeline complet sans le filtre spectator
-  (retiré). Sert de baseline propre pour mesurer Phase 3 quand elle
-  arrivera, et pour valider que les wins v2 (goalie majority/weighting,
-  OCR ≥2 votes, name OCR, training-mode default, palet rendu) tiennent
-  hors filtre spectator. Phase 1 ~1h. — M
+  (retiré) avec `--ocr-engine ensemble` (PARSeq + TrOCR cross-check).
+  Sert de baseline propre pour mesurer Phase 3 quand elle arrivera,
+  valider que les wins v2 tiennent hors filtre spectator, et mesurer
+  l'effet de l'ensembling sur les hallucinations TrOCR. Phase 1 ~1h. — M
 
 ### P1 — Court terme
-- **Stop-list TrOCR** pour filtrer les hallucinations type `CASHIER`,
-  `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY` (vocabulaire
-  reçus). À placer dans `_filter_name` de `phase6_identify.py`. Sans
-  filtre spectator, ces hallucinations vont apparaître sur encore plus
-  d'entités → priorité bumpée. — XS
+- **Stop-list TrOCR** comme fallback si l'ensembling laisse encore
+  passer des hallucinations solo (cas où PARSeq est silencieux et
+  TrOCR seul passe le ×0.7) : `CASHIER`, `CASH`, `AMOUNT`, `TAX`,
+  `QTY`, `ITEM`, `MCAUD`, `MAY`. À ajouter dans `_filter_name` de
+  `phase6_identify.py`. — XS
 - **Cache pose entre Phase 1.5 et Phase 6 identify** : aujourd'hui
   yolo26l-pose tourne 2× sur les mêmes frames. Écrire `pose_cache.json`
   en P1.5 et le lire en P6 sauve ~20-30 % wall-clock pipeline. — S

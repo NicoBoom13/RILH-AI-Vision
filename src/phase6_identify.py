@@ -281,6 +281,59 @@ class ParseqOCR:
         return out
 
 
+class EnsembleOCR:
+    """Confidence-weighted vote between PARSeq + TrOCR (Strategy 2).
+
+    Each crop is fed to BOTH engines. We then compare their cleaned
+    outputs (digits-only for numbers, alpha-only uppercase for names):
+      - both agree on a valid result → bonus +0.10 conf
+      - only one engine returns valid output → kept, downweighted ×0.7
+      - both return valid but disagree → rejected (text="", conf=0.0)
+      - neither valid → rejected
+
+    Compared to a single engine, this catches model-specific
+    hallucinations (e.g. TrOCR's receipt vocabulary CASHIER/AMOUNT/TAX
+    on noisy crops) because PARSeq has different failure modes — they
+    rarely hallucinate the same nonsense on the same crop.
+
+    Cost: ~2× inference (both models on every crop). Both must be
+    loaded in GPU memory (~390 MB total)."""
+
+    def __init__(self, device):
+        self.device = device
+        self.parseq = ParseqOCR(device=device)
+        self.trocr = TrOCR_OCR(device=device)
+
+    @staticmethod
+    def _combine(p_pair, t_pair, kind):
+        """Merge a single (parseq, trocr) result pair into one (text, conf).
+        Cleans each side with the kind-specific filter before comparing."""
+        p_text, p_conf = p_pair
+        t_text, t_conf = t_pair
+        cleaner = _filter_number if kind == "number" else _filter_name
+        p_clean = cleaner(p_text)
+        t_clean = cleaner(t_text)
+
+        if p_clean and t_clean:
+            if p_clean == t_clean:
+                # Agreement bonus, capped at 1.0
+                return p_clean, min(1.0, max(p_conf, t_conf) + 0.10)
+            return "", 0.0  # conflict → reject
+        if p_clean:
+            return p_clean, p_conf * 0.7  # PARSeq solo, downweighted
+        if t_clean:
+            return t_clean, t_conf * 0.7  # TrOCR solo, downweighted
+        return "", 0.0
+
+    def read_batch(self, bgr_crops, kind="number", max_new_tokens=16):
+        if not bgr_crops:
+            return []
+        p_results = self.parseq.read_batch(bgr_crops)
+        t_results = self.trocr.read_batch(bgr_crops, max_new_tokens=max_new_tokens)
+        return [self._combine(p, t, kind)
+                for p, t in zip(p_results, t_results)]
+
+
 def group_detections_by_track(tracks_data):
     by_tid = defaultdict(list)
     for fr in tracks_data["frames"]:
@@ -417,6 +470,8 @@ def run(
 
     if ocr_engine == "trocr":
         ocr = TrOCR_OCR(device=device)
+    elif ocr_engine == "ensemble":
+        ocr = EnsembleOCR(device=device)
     else:
         ocr = ParseqOCR(device=device)
     print(f"OCR engine: {ocr_engine}")
@@ -446,16 +501,26 @@ def run(
         for i, (_, _, kind, _) in enumerate(pending_meta):
             (num_idx if kind == "number" else name_idx).append(i)
 
+        # Per-kind dispatch: TrOCR needs different max_new_tokens budgets
+        # (6 for digits, 16 for names) to keep digit recall up; PARSeq has
+        # no such knob; EnsembleOCR also needs the kind to combine
+        # outputs after each engine's own filter.
+        def _read(crops, kind, max_tokens):
+            if isinstance(ocr, TrOCR_OCR):
+                return ocr.read_batch(crops, max_new_tokens=max_tokens)
+            if isinstance(ocr, EnsembleOCR):
+                return ocr.read_batch(crops, kind=kind,
+                                      max_new_tokens=max_tokens)
+            return ocr.read_batch(crops)
+
         results = [None] * len(pending_meta)
         if num_idx:
             num_crops = [pending_crops[i] for i in num_idx]
-            kw = {"max_new_tokens": 6} if isinstance(ocr, TrOCR_OCR) else {}
-            for j, r in zip(num_idx, ocr.read_batch(num_crops, **kw)):
+            for j, r in zip(num_idx, _read(num_crops, "number", 6)):
                 results[j] = r
         if name_idx:
             name_crops = [pending_crops[i] for i in name_idx]
-            kw = {"max_new_tokens": 16} if isinstance(ocr, TrOCR_OCR) else {}
-            for j, r in zip(name_idx, ocr.read_batch(name_crops, **kw)):
+            for j, r in zip(name_idx, _read(name_crops, "name", 16)):
                 results[j] = r
 
         for (tid, idx, kind, fi), crop, (raw_text, conf) in zip(
@@ -655,10 +720,16 @@ def main():
                         "now does the bulk of the noise rejection downstream.")
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--ocr-batch", type=int, default=32)
-    p.add_argument("--ocr-engine", choices=["parseq", "trocr"], default="parseq",
+    p.add_argument("--ocr-engine",
+                   choices=["parseq", "trocr", "ensemble"], default="parseq",
                    help="OCR engine. parseq = PARSeq via torch.hub (fast). "
                         "trocr = Microsoft TrOCR base-printed (heavier ~340MB, "
-                        "more robust on difficult / small / angled text).")
+                        "more robust on difficult / small / angled text). "
+                        "ensemble = both engines + confidence-weighted vote: "
+                        "agreement bonus +0.10, solo result penalty ×0.7, "
+                        "conflict rejected — kills model-specific "
+                        "hallucinations (e.g. TrOCR's CASHIER/AMOUNT receipt "
+                        "vocabulary) at the cost of ~2× inference and ~390 MB GPU.")
     p.add_argument("--debug-crops-dir", type=str, default=None,
                    help="If set, save every OCR'd crop into "
                         "<dir>/numbers/ and <dir>/names/ with a filename "
