@@ -157,8 +157,7 @@ def index_phase15_phase6(teams, ids, team_conf_floor):
     """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf),
     name (+conf). Tracks with team vote_confidence < floor return
     team_id=None (ineligible for merging into any entity with a teammate —
-    they stay as singletons). is_static tracks are filtered upstream in
-    run() so they never reach this function."""
+    they stay as singletons)."""
     team_of = {}
     is_goalie = {}
     for tid_str, info in (teams or {}).get("tracks", {}).items():
@@ -416,17 +415,6 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
         raise SystemExit(f"Missing {teams_json}: run Phase 1.5 first")
     if ids is None:
         print(f"Warning: {ids_json} missing — OCR signal won't be used")
-
-    # Drop spectator (is_static) tracks from all downstream work — they
-    # poison entity merging (HockeyAI often mistags them as goaltender,
-    # and their near-stationary bboxes fool OSNet into matching anyone).
-    static_tids = {int(t) for t, info in teams.get("tracks", {}).items()
-                   if info.get("is_static")}
-    if static_tids:
-        for fr in tracks_data["frames"]:
-            fr["boxes"] = [b for b in fr["boxes"]
-                           if b.get("track_id") not in static_tids]
-        print(f"Excluded {len(static_tids)} spectator tracks from entity merge")
 
     team_of, is_goalie, jersey, jersey_conf, name, name_conf = (
         index_phase15_phase6(teams, ids, team_conf_floor)

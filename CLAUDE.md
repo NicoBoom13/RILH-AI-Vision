@@ -161,22 +161,7 @@ inference tractable):
    `team_id`/`is_goaltender`/`jersey_number`/`name`/frame ranges, plus a
    list of unmatched singleton tracks.
 
-**Spectator filter & goalie weighting** (added test16/17):
-- Phase 1.5 computes per-track **median per-frame displacement** and
-  **median bbox-center y**, then flags `is_static` =
-  `NOT is_goaltender AND (median_disp < 5 px OR median_y > 0.74 ×
-  frame_height)`. Goalie-tagged tracks are NEVER filtered — real
-  goalies are inherently low-motion (they crouch in the crease) and
-  often fit the spectator y-band, so dropping them removes the goalie
-  from the rendered video. The 7 user-confirmed spectators that
-  HockeyAI mistags as goalies (~10% of all goalie-flagged tracks on
-  test16) leak through this filter and need a complementary stop-list /
-  fine-tune fix (P1 backlog). Static tracks are excluded from Phase 6
-  identify (no OCR), Phase 1.6 (no merge), and Phase 6 annotate (no
-  render). This collapses an entire family of bugs: HockeyAI mistagging
-  stationary spectators as `player` then merging into player entities,
-  TrOCR hallucinating receipt vocabulary off advertising banners, and
-  OSNet matching spectator "players" against real-player tracks.
+**Goalie weighting** (added test16):
 - Phase 1.5 `is_goaltender` per track now uses **majority threshold**
   (>50 % of detections tagged `goaltender`), replacing the previous
   `any` rule that flipped a track on a single noisy frame.
@@ -186,6 +171,12 @@ inference tractable):
 - Phase 6 identify aggregation requires **≥2 agreeing votes** for the
   winning number/name (singletons are usually noise — TrOCR can produce
   a confident wrong digit on a single bad crop).
+
+**Spectator handling** — see test17 for why a motion+position filter was
+attempted then **removed**: it dropped ~50 % of real player fragments to
+catch ~30 spectators, while the 7 spectators HockeyAI tags as goalies
+slipped through anyway. The plan is to wait for **Phase 3 rink
+calibration** (geometric "is this bbox on the ice?") to do this cleanly.
 
 Annotation (`phase6_annotate.py`):
 - Supervision-style boxes/labels/traces. Box color is **forced green or
@@ -199,8 +190,9 @@ Annotation (`phase6_annotate.py`):
   if no number, name omitted if not identified.
 - **Puck**: rendered as a dark gray bbox (60,60,60) + short trace.
   No label.
-- **Spectators**: tracks flagged `is_static` in Phase 1.5 are skipped
-  from rendering.
+- **Spectators**: not filtered (will be addressed by Phase 3 rink
+  calibration). All tracked detections render — including stationary
+  bystanders that HockeyAI tags as players.
 
 ## Known limitations (in priority order)
 1. **Video source quality is the current bottleneck** (post test13). Torso
@@ -208,14 +200,16 @@ Annotation (`phase6_annotate.py`):
    team colour clustering margin drops when jerseys aren't sharply contrasted.
    No algorithmic fix short of fine-tuning — needs better input footage
    (stable camera, good lighting, close distance, high contrast jerseys).
-2. **Track fragmentation** is real but **largely absorbed** by Phase 1.6
-   + the spectator filter (test16: 435 tracks → 37 entities, of which
-   only 5 G after the goalie majority + frame-coverage rules; test17 to
-   confirm with the spectator filter active). HockeyAI still
+2. **Track fragmentation** is real but **partly absorbed** by Phase 1.6
+   (test16: 435 tracks → 37 entities, of which only 5 G after the
+   goalie majority + frame-coverage rules). HockeyAI still
    intermittently flips goaltender/player class on individual frames,
    but the majority threshold + frame-coverage weighting mostly
    neutralises that. Refs still merge into the two teams (no third
-   cluster) — see #5.
+   cluster) — see #5. **Stationary spectators that HockeyAI mistags as
+   `player` or `goaltender` still pollute entities** — the Phase 1.5
+   spectator filter attempted in test17 over-filtered real players and
+   was reverted; clean fix waits for Phase 3 rink calibration.
 3. **Phase 3 calibration** is blocked on annotation. HockeyRink (ice) does
    not transfer to roller rinks — the model "recognises" a rink but collapses
    all 56 keypoints to a cluster instead of localising them individually.
@@ -271,7 +265,15 @@ what differs from the immediate predecessor.
     les tracks isolées contenant ces hallucinations, mais TrOCR continue
     à les produire sur certains crops illisibles de vrais joueurs.
     Stop-list = next-step P1.
-  Verdict utilisateur : revue visuelle en cours sur `debug_frames/final/`.
+  Verdict utilisateur après revue visuelle : **filtre spectator
+  RETIRÉ** — trop de vrais joueurs faux-droppés (~50 % des fragments)
+  pour ne catcher que ~30 spectators sur 37 listés, et les 7
+  spectators-tagged-goalie passaient quand même. Le bon outil sera la
+  calibration rink (Phase 3) qui répondra géométriquement « ce bbox
+  est-il sur la glace ou en tribune ? ». Tout le reste de la v2 est
+  conservé (name OCR, debug, palet gris, goalie majority + frame-
+  weighting, OCR ≥2 votes, ocr_min_conf 0.30, ocr_conflict 0.40,
+  training-mode default, label `t{id} G/S #num NAME`).
 - **test16 — Villeneuve vs Vierzon (Video 05) — 5 fix consolidés.** Première
   run avec `--match-mode` (top-1 puck/frame), goalie majority rule,
   entity goalie weighted by frame coverage, OCR ≥2 votes, `ocr_min_conf`
@@ -446,21 +448,24 @@ what differs from the immediate predecessor.
 (XS <30min, S ~1h, M ~1j, L ~1sem, XL >1sem). Pour les chantiers structurels
 multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
-### P0 — En attente revue visuelle test17
-- **Revue debug_frames/final/ test17** par utilisateur : valider que
-  (a) track 2 n'est plus G, (b) les 30 spectators non-goalie sont bien
-  hors render, (c) palet visible en gris foncé, (d) entités résiduelles
-  font sens. — XS
+### P0 — Prochaine itération
+- **Pipeline test18** : pipeline complet sans le filtre spectator
+  (retiré). Sert de baseline propre pour mesurer Phase 3 quand elle
+  arrivera, et pour valider que les wins v2 (goalie majority/weighting,
+  OCR ≥2 votes, name OCR, training-mode default, palet rendu) tiennent
+  hors filtre spectator. Phase 1 ~1h. — M
 
-### P1 — Après revue test17
-- **Stop-list TrOCR** pour filtrer les hallucinations résiduelles
-  (`CASHIER`, `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY`,
-  vocabulaire receipt). Implém : reject le résultat OCR si après
-  normalisation alpha il matche la stop-list. À placer dans
-  `_filter_name` de `phase6_identify.py`. **Effet attendu** : élimine
-  6 entités sur 10 du top-10 test17 qui portent ces noms. — XS
-- **Itérer sur les bugs identifiés dans test17** (team, OCR résiduel,
-  spectators tagués goalie qui passent le filtre, autres). — S–M
+### P1 — Court terme
+- **Stop-list TrOCR** pour filtrer les hallucinations type `CASHIER`,
+  `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY` (vocabulaire
+  reçus). À placer dans `_filter_name` de `phase6_identify.py`. Sans
+  filtre spectator, ces hallucinations vont apparaître sur encore plus
+  d'entités → priorité bumpée. — XS
+- **Cache pose entre Phase 1.5 et Phase 6 identify** : aujourd'hui
+  yolo26l-pose tourne 2× sur les mêmes frames. Écrire `pose_cache.json`
+  en P1.5 et le lire en P6 sauve ~20-30 % wall-clock pipeline. — S
+- **Phase 1.5 + Phase 6 identify en parallèle** (processus séparés).
+  Gain ~10-20 % supplémentaire (overlap GPU/CPU). — S
 
 ### P2 — Court-moyen terme
 - **Fix team classification Phase 1.5** : sur test15, 6 tracks/435 mal

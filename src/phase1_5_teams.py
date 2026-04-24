@@ -204,50 +204,6 @@ def goaltender_tids(tracks_data, threshold=0.5):
             if ng / max(np_ + ng, 1) > threshold}
 
 
-def static_track_metrics(tracks_data):
-    """Per-track motion + position summary. Returns
-    {tid: {"median_disp": float, "median_y": float}}.
-
-    median_disp = median per-frame displacement in pixels. Spectators have
-    very small per-frame movement (< 5 px); a real skater's median is
-    typically 10-40 px. We use the median rather than total span because
-    tracker ID swaps cause spectator tracks to occasionally jump across
-    the frame — inflating their max span — but the bulk of consecutive
-    frames remain near-stationary, so the median stays small.
-
-    median_y = median bbox-center y-coordinate, used as a proxy for
-    "is this track in the rink area or in the stands?"."""
-    from collections import defaultdict
-    pos = defaultdict(list)  # tid -> [(frame, cx, cy), ...]
-    for fr in tracks_data["frames"]:
-        fi = fr["frame"]
-        for b in fr["boxes"]:
-            if b["class_id"] != PERSON_CLASS or b["track_id"] < 0:
-                continue
-            xy = b["xyxy"]
-            pos[b["track_id"]].append((fi, (xy[0] + xy[2]) / 2,
-                                       (xy[1] + xy[3]) / 2))
-    out = {}
-    for tid, points in pos.items():
-        if not points:
-            continue
-        ys = sorted(p[2] for p in points)
-        median_y = ys[len(ys) // 2]
-        if len(points) < 2:
-            out[tid] = {"median_disp": 0.0, "median_y": median_y}
-            continue
-        points.sort(key=lambda p: p[0])
-        disps = []
-        for i in range(1, len(points)):
-            dx = points[i][1] - points[i - 1][1]
-            dy = points[i][2] - points[i - 1][2]
-            disps.append((dx * dx + dy * dy) ** 0.5)
-        disps.sort()
-        out[tid] = {"median_disp": disps[len(disps) // 2],
-                    "median_y": median_y}
-    return out
-
-
 def stream_needed_frames(video_path, indices):
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -489,31 +445,8 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
     }
     goalie_tids = goaltender_tids(tracks_data)
     skater_tids = all_tids - goalie_tids
-
-    motion_pos = static_track_metrics(tracks_data)
-    motion_threshold_px = 5.0
-    # Frame height — any frame's metadata or fallback by reading the video
-    # would be cleaner, but tracks_data carries it via Phase 1's writer.
-    frame_height = tracks_data.get("height", 1080)
-    spectator_y_band = 0.74 * frame_height  # bottom 26% = stands
-
-    # Static = NOT real-goalie AND (low motion OR position in stands).
-    # We never filter goalie-tagged tracks — real goalies are inherently
-    # low-motion, and dropping them removes the goalie from the rendered
-    # video. The 7 user-confirmed spectators that HockeyAI mistags as
-    # goalies will leak through this filter; they need a complementary
-    # stop-list / fine-tune fix (P1 backlog).
-    static_tids = set()
-    for tid, m in motion_pos.items():
-        if tid not in all_tids or tid in goalie_tids:
-            continue
-        if m["median_disp"] < motion_threshold_px or m["median_y"] > spectator_y_band:
-            static_tids.add(tid)
     print(f"Total player tracks in {tracks_json.name}: {len(all_tids)} "
           f"(skaters {len(skater_tids)}, goaltenders {len(goalie_tids)})")
-    print(f"Static tracks (NOT goalie AND (median_disp < {motion_threshold_px}px "
-          f"OR median_y > {spectator_y_band:.0f}px)): "
-          f"{len(static_tids)} — treated as spectators, excluded downstream")
 
     pose_path = str(resolve_yolo_path(pose_model_name))
     print(f"Loading pose model: {pose_path}")
@@ -569,8 +502,6 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
         ),
         "team_centers_bgr": [list(c) for c in centers],
         "cluster_margin": margin,
-        "motion_threshold_px": motion_threshold_px,
-        "spectator_y_band_px": spectator_y_band,
         "tracks": {
             str(tid): {
                 "team_id": team_of[tid],
@@ -581,9 +512,6 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
                 ),
                 "n_color_samples": len(crops_by_tid[tid]["crop_colors"]),
                 "is_goaltender": tid in goalie_tids,
-                "is_static": tid in static_tids,
-                "median_disp_px": round(motion_pos.get(tid, {}).get("median_disp", 0.0), 2),
-                "median_y_px": round(motion_pos.get(tid, {}).get("median_y", 0.0), 1),
             }
             for tid in crops_by_tid
         },

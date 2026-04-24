@@ -144,7 +144,7 @@ def build_detections(boxes):
 
 def render(tracks_data, identified, team_of, video_path, output,
            entity_of_tid=None, entity_by_id=None,
-           per_track_goalie=None, static_tids=None,
+           per_track_goalie=None,
            debug_frames_dir=None, debug_frames_step=10):
     """Render. If entity_of_tid + entity_by_id are provided, each merged
     track inherits its entity's team_id, jersey_number, name, and
@@ -172,7 +172,6 @@ def render(tracks_data, identified, team_of, video_path, output,
 
     id_tracks = identified.get("tracks", {})
     per_track_goalie = per_track_goalie or {}
-    static_tids = static_tids or set()
     frames_map = {fr["frame"]: fr["boxes"] for fr in tracks_data["frames"]}
 
     def team_for(tid_i):
@@ -229,8 +228,7 @@ def render(tracks_data, identified, team_of, video_path, output,
             break
         boxes = frames_map.get(fi, [])
         player_boxes = [b for b in boxes
-                        if b["class_id"] == PERSON_CLASS and b["track_id"] >= 0
-                        and b["track_id"] not in static_tids]
+                        if b["class_id"] == PERSON_CLASS and b["track_id"] >= 0]
         puck_boxes = [b for b in boxes
                       if b["class_id"] == PUCK_CLASS and b["track_id"] >= 0]
 
@@ -306,7 +304,6 @@ def main():
     identified = json.loads(id_json.read_text())
 
     per_track_goalie = {}
-    static_tids = set()
     teams_json_path = tracks_json.with_name("tracks_teams.json")
     if teams_json_path.exists():
         print(f"Using precomputed teams from {teams_json_path}")
@@ -316,10 +313,6 @@ def main():
         team_colors = [tuple(c) for c in teams_data["team_centers_bgr"]]
         per_track_goalie = {int(tid): bool(info.get("is_goaltender", False))
                             for tid, info in teams_data["tracks"].items()}
-        static_tids = {int(tid) for tid, info in teams_data["tracks"].items()
-                       if info.get("is_static")}
-        if static_tids:
-            print(f"Filtering {len(static_tids)} spectator tracks from render")
     else:
         print("Sampling jersey colors per track…")
         colors = sample_track_colors(tracks_data, video, args.color_samples)
@@ -355,7 +348,6 @@ def main():
     render(tracks_data, identified, team_of, video, output,
            entity_of_tid=entity_of_tid, entity_by_id=entity_by_id,
            per_track_goalie=per_track_goalie,
-           static_tids=static_tids,
            debug_frames_dir=debug_frames_dir,
            debug_frames_step=args.debug_frames_step)
 

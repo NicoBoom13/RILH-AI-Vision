@@ -395,7 +395,6 @@ def run(
     ocr_batch_size: int,
     ocr_engine: str = "parseq",
     debug_crops_dir: Path | None = None,
-    teams_json: Path | None = None,
 ):
     device = pick_device()
     print(f"Device: {device}")
@@ -403,21 +402,6 @@ def run(
     tracks_data = json.loads(tracks_json.read_text())
     by_tid = group_detections_by_track(tracks_data)
     print(f"Player tracks: {len(by_tid)}")
-
-    # If Phase 1.5's tracks_teams.json is available, pre-filter out
-    # `is_static` tracks (spectators in the stands). OCR on them is
-    # pure noise — TrOCR hallucinates receipt vocabulary off advertising
-    # banners / scoreboard text, polluting entity names downstream.
-    static_tids = set()
-    if teams_json is not None and teams_json.exists():
-        teams_data = json.loads(teams_json.read_text())
-        static_tids = {int(t) for t, info in teams_data.get("tracks", {}).items()
-                       if info.get("is_static")}
-        if static_tids:
-            n_before = len(by_tid)
-            by_tid = {tid: v for tid, v in by_tid.items() if tid not in static_tids}
-            print(f"Skipping {n_before - len(by_tid)} static (spectator) tracks — "
-                  f"OCR will run on {len(by_tid)} moving tracks only")
 
     samples = pick_samples(by_tid, samples_per_track)
     frame_work = defaultdict(list)  # frame_idx -> [(tid, xyxy)]
@@ -679,11 +663,6 @@ def main():
                    help="If set, save every OCR'd crop into "
                         "<dir>/numbers/ and <dir>/names/ with a filename "
                         "encoding track_id, frame, OCR result and confidence.")
-    p.add_argument("--teams-json", type=str, default=None,
-                   help="Optional path to Phase 1.5 tracks_teams.json. If "
-                        "provided, tracks flagged is_static (spectators) are "
-                        "excluded from OCR. Default: auto-discover "
-                        "<tracks_dir>/tracks_teams.json.")
     args = p.parse_args()
 
     tracks_json = Path(args.tracks_json)
@@ -691,8 +670,6 @@ def main():
     output = (Path(args.output) if args.output
               else tracks_json.with_name("tracks_identified.json"))
     debug_dir = Path(args.debug_crops_dir) if args.debug_crops_dir else None
-    teams = (Path(args.teams_json) if args.teams_json
-             else tracks_json.with_name("tracks_teams.json"))
 
     run(
         tracks_json, video, output,
@@ -700,7 +677,6 @@ def main():
         args.pose_imgsz, args.ocr_batch,
         ocr_engine=args.ocr_engine,
         debug_crops_dir=debug_dir,
-        teams_json=teams,
     )
 
 
