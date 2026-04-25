@@ -7,7 +7,7 @@ TrOCR's guess (parsed from the filename) so the typical interaction is
 just hitting Enter to confirm a correct guess.
 
 Usage:
-  python tools/annotate_crops.py runs/test19 [--port 8000]
+  python tools/annotate_crops.py runs/run19 [--port 8000]
 
 Then open http://localhost:8000 in a browser.
 
@@ -285,7 +285,7 @@ def main():
     p = argparse.ArgumentParser(description="Manual jersey-number annotation")
     p.add_argument("root", type=str,
                    help="Root dir containing <video>/debug_crops/numbers/*.png "
-                        "(e.g. runs/test19)")
+                        "(e.g. runs/run19)")
     p.add_argument("--output", default=None,
                    help="Annotations JSON path (default: <root>/annotations.json)")
     p.add_argument("--port", type=int, default=8000)

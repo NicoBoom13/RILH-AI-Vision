@@ -1,10 +1,10 @@
 """
-RILH-AI-Vision — Phase 1.5 v2
+RILH-AI-Vision — stage_b_teams
 Classify each player track into one of two teams.
 
 Pipeline (per sampled detection, not per frame — keeps inference tractable):
   1) For each track, pick the N highest-confidence detections.
-  2) Run YOLO11-pose on the unique frames needed; match by IoU to the track bbox.
+  2) Run YOLO pose on the unique frames needed; match by IoU to the track bbox.
   3) Crop the torso rectangle shoulders→hips (any orientation).
   4) Sub-divide the torso into a rows×cols grid; get the dominant BGR in each
      sub-region (k-means on color-filtered pixels); average the sub-region
@@ -12,15 +12,19 @@ Pipeline (per sampled detection, not per frame — keeps inference tractable):
   5) k-means (HSV by default) over *all* per-crop colors — not per-track medians.
      Every crop gets a team label; each track inherits the majority vote.
 
+Inputs:
+  detections.json — produced by stage_a_detect (per-frame detections + tracks).
+  video.mp4       — the source video, sampled for the cropped frames.
+
 Outputs:
-  tracks_teams.json — per-track team_id, vote_distribution, vote_confidence,
-    n_color_samples; plus team_centers_bgr and cluster_margin.
+  teams.json        — per-track team_id, vote_distribution, vote_confidence,
+                      n_color_samples; plus team_centers_bgr and cluster_margin.
   teams_preview.png — grid of torso thumbnails, one row per team, sorted by
-    vote confidence desc, with tid and vote counts overlaid. Left gutter shows
-    the team label and the team centroid swatch.
+                      vote confidence desc, with tid and vote counts overlaid.
+                      Left gutter shows the team label and the centroid swatch.
 
 Roster (roller inline hockey): 4 skaters + 1 goalie per team, 1–2 refs.
-Refs are filtered upstream when Phase 1 used HockeyAI; they leak with COCO.
+Refs are filtered upstream when stage_a used HockeyAI; they leak with COCO.
 """
 
 import argparse
@@ -432,20 +436,20 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
     cv2.imwrite(str(output_path), grid)
 
 
-def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
+def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         pose_imgsz, preview_cols, space, multi_grid):
     device = pick_device()
     print(f"Device: {device}")
 
-    tracks_data = json.loads(tracks_json.read_text())
+    detections_data = json.loads(detections_json.read_text())
     all_tids = {
         b["track_id"]
-        for fr in tracks_data["frames"] for b in fr["boxes"]
+        for fr in detections_data["frames"] for b in fr["boxes"]
         if b["class_id"] == PERSON_CLASS and b["track_id"] >= 0
     }
-    goalie_tids = goaltender_tids(tracks_data)
+    goalie_tids = goaltender_tids(detections_data)
     skater_tids = all_tids - goalie_tids
-    print(f"Total player tracks in {tracks_json.name}: {len(all_tids)} "
+    print(f"Total player tracks in {detections_json.name}: {len(all_tids)} "
           f"(skaters {len(skater_tids)}, goaltenders {len(goalie_tids)})")
 
     pose_path = str(resolve_yolo_path(pose_model_name))
@@ -455,7 +459,7 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
     print(f"Sampling jersey colors (≤{samples_per_track}/track, pose-based, "
           f"{multi_grid[0]}×{multi_grid[1]} multi-point)…")
     crops_by_tid = sample_jersey_colors(
-        tracks_data, video_path, pose_model, device,
+        detections_data, video_path, pose_model, device,
         samples_per_track, pose_imgsz, multi_grid,
     )
     n_crops = sum(len(v["crop_colors"]) for v in crops_by_tid.values())
@@ -489,7 +493,7 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
     print(f"  Cluster margin: {margin:.2f} — {verdict}")
 
     out_json = {
-        "source_tracks": str(tracks_json),
+        "source_detections": str(detections_json),
         "source_video": str(video_path),
         "version": "v2",
         "method": "pose_torso + multi_point_avg + per_crop_vote",
@@ -529,13 +533,14 @@ def run(tracks_json, video_path, output, samples_per_track, pose_model_name,
 
 def main():
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — Phase 1.5 v2 (pose torso + multi-point "
+        description="RILH-AI-Vision — stage_b_teams (pose torso + multi-point "
                     "+ per-crop vote)"
     )
-    p.add_argument("tracks_json", type=str)
+    p.add_argument("detections_json", type=str,
+                   help="stage_a output (detections.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON (default: <tracks_dir>/tracks_teams.json)")
+                   help="Output JSON (default: <detections_dir>/teams.json)")
     p.add_argument("--samples-per-track", type=int, default=8,
                    help="Crops per track to vote on (higher = more robust, "
                         "slower inference)")
@@ -558,12 +563,12 @@ def main():
     except Exception as e:
         raise SystemExit(f"Invalid --grid {args.grid!r}: expected 'RxC'") from e
 
-    tracks_json = Path(args.tracks_json)
+    detections_json = Path(args.detections_json)
     video = Path(args.video)
     output = (Path(args.output) if args.output
-              else tracks_json.with_name("tracks_teams.json"))
+              else detections_json.with_name("teams.json"))
 
-    run(tracks_json, video, output,
+    run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,
         args.preview_cols, args.space, (rows, cols))
 

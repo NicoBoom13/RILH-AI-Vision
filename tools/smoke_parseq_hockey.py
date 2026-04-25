@@ -18,8 +18,8 @@ from PIL import Image
 
 
 CKPT = Path("models/parseq_hockey.pt")
-ANN = Path("runs/test19/annotations.json")
-ROOT = Path("runs/test19")
+ANN = Path("runs/run19/annotations.json")
+ROOT = Path("runs/run19")
 N_SAMPLES = 200
 
 

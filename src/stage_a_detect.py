@@ -1,18 +1,20 @@
 """
-RILH-AI-Vision — Phase 1
-Detect & track players + puck with YOLO + ByteTrack.
+RILH-AI-Vision — stage_a_detect
+Detect & track players + puck with YOLO + ByteTrack — the entry point of
+the identification pipeline.
 
 Outputs:
-- annotated.mp4  — source video with bounding boxes, IDs, traces overlaid
-- tracks.json    — per-frame detection records, consumed by Phase 2
+- annotated.mp4   — source video with bounding boxes, IDs, traces overlaid
+- detections.json — per-frame detection records, consumed by every
+                    downstream stage (b/c/d/e and f/g)
 
 Two model backends:
 - Default: YOLO11 pretrained on COCO (class 0 person, class 32 "sports ball"
   as a puck proxy — unreliable on hockey pucks)
 - --hockey-model: HockeyAI (YOLOv8m fine-tuned on ice hockey, 7 classes).
   Auto-downloaded from HuggingFace on first use. Classes are remapped so
-  the tracks.json output stays compatible with Phase 2
-  (class_id=0 for any skater/goaltender, class_id=32 for puck).
+  the detections.json output schema stays uniform across backends:
+  class_id=0 for any skater/goaltender, class_id=32 for puck.
 """
 
 import argparse
@@ -86,7 +88,7 @@ def run(
 ):
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated.mp4"
-    tracks_path = output_dir / "tracks.json"
+    detections_path = output_dir / "detections.json"
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -169,7 +171,7 @@ def run(
             # spectator objects). Player + goaltender detections pass
             # through untouched. Done AFTER the tracker so puck tracks
             # already have IDs assigned; the dropped duplicates simply
-            # never reach tracks.json.
+            # never reach detections.json.
             # --training-mode disables this filter (e.g. drills with
             # multiple pucks on the ice at once).
             if not training_mode and len(detections) > 0:
@@ -219,7 +221,7 @@ def run(
 
     writer.release()
 
-    with open(tracks_path, "w") as f:
+    with open(detections_path, "w") as f:
         json.dump({
             "video": str(video_path),
             "fps": fps,
@@ -234,7 +236,7 @@ def run(
 
     print(f"\nDone.")
     print(f"  Annotated video: {annotated_path}")
-    print(f"  Tracks data:     {tracks_path}")
+    print(f"  Detections data: {detections_path}")
 
 
 def main():

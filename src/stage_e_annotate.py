@@ -1,14 +1,17 @@
 """
-RILH-AI-Vision — Phase 6 viz
-Render an annotated MP4 using the same supervision-based style as Phase 1:
-  - BoxAnnotator + LabelAnnotator + TraceAnnotator
-  - One fixed color per team (green / blue), picked from k=2 clustering of
-    the players' jersey colors.
-  - Labels read "#NN" when the track has an identified jersey number, "#??"
-    otherwise. Class name (player / goaltender) is intentionally omitted.
+RILH-AI-Vision — stage_e_annotate
+Render the final annotated MP4 from upstream stage outputs:
+  - BoxAnnotator + LabelAnnotator + TraceAnnotator from supervision
+  - One fixed color per team (green / blue), inherited from stage_b
+  - Per-track label : `t{id} {G|S} #NN` (track id always shown, role
+    G/S from is_goaltender, jersey number from stage_c via stage_d
+    entity rollup; `#??` if no number identified)
+  - Puck rendered as a dark gray bbox (no label) + short trace
 
-Inputs:  tracks.json (Phase 1), tracks_identified.json (Phase 6), source video.
-Output:  annotated_numbered.mp4 at the given --output path.
+Inputs : detections.json (stage_a), numbers.json (stage_c), the source
+         video; auto-discovers teams.json (stage_b) and entities.json
+         (stage_d) next to detections.json if present.
+Output : an annotated MP4 at the given --output path.
 """
 
 import argparse
@@ -142,16 +145,16 @@ def build_detections(boxes):
     )
 
 
-def render(tracks_data, identified, team_of, video_path, output,
+def render(detections_data, numbers, team_of, video_path, output,
            entity_of_tid=None, entity_by_id=None,
            per_track_goalie=None,
            debug_frames_dir=None, debug_frames_step=10):
-    """Render. If entity_of_tid + entity_by_id are provided, each merged
-    track inherits its entity's team_id, jersey_number, name, and
-    is_goaltender so every member of the same entity is drawn with the
-    same color + label across frames. Tracks outside any entity fall back
-    to per-track team_id (Phase 1.5), per-track jersey/name (Phase 6
-    identify), and per-track is_goaltender (Phase 1.5).
+    """Render. If entity_of_tid + entity_by_id are provided (stage_d
+    output), each merged track inherits its entity's team_id,
+    jersey_number, and is_goaltender so every member of the same entity
+    is drawn with the same color + label across frames. Tracks outside
+    any entity fall back to per-track team_id (stage_b), per-track
+    jersey number (stage_c), and per-track is_goaltender (stage_b).
 
     If debug_frames_dir is given, every `debug_frames_step`-th frame is
     also written as a PNG to that folder for visual review."""
@@ -170,9 +173,9 @@ def render(tracks_data, identified, team_of, video_path, output,
         debug_frames_dir.mkdir(parents=True, exist_ok=True)
         print(f"Debug frames → {debug_frames_dir}/ (1 every {debug_frames_step})")
 
-    id_tracks = identified.get("tracks", {})
+    numbers_tracks = numbers.get("tracks", {})
     per_track_goalie = per_track_goalie or {}
-    frames_map = {fr["frame"]: fr["boxes"] for fr in tracks_data["frames"]}
+    frames_map = {fr["frame"]: fr["boxes"] for fr in detections_data["frames"]}
 
     def team_for(tid_i):
         if entity_of_tid is not None:
@@ -188,16 +191,8 @@ def render(tracks_data, identified, team_of, video_path, output,
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
                 return entity_by_id[eid].get("jersey_number")
-        info = id_tracks.get(str(tid_i))
+        info = numbers_tracks.get(str(tid_i))
         return info.get("jersey_number") if info else None
-
-    def name_for(tid_i):
-        if entity_of_tid is not None:
-            eid = entity_of_tid.get(tid_i)
-            if eid is not None:
-                return entity_by_id[eid].get("name")
-        info = id_tracks.get(str(tid_i))
-        return info.get("name") if info else None
 
     def goalie_for(tid_i):
         if entity_of_tid is not None:
@@ -246,11 +241,9 @@ def render(tracks_data, identified, team_of, video_path, output,
                 role = "G" if goalie_for(ti) else "S"
                 num = jersey_for(ti)
                 num_str = f"#{num}" if num else "#??"
-                nm = name_for(ti)
-                parts = [f"t{ti}", role, num_str]
-                if nm:
-                    parts.append(nm)
-                labels.append(" ".join(parts))
+                # Label: `t{id} {G|S} #{num}` — track id always shown
+                # so the user can call out frame-level bugs by tid.
+                labels.append(f"t{ti} {role} {num_str}")
             a = annotators[team_id]
             frame = a["box"].annotate(scene=frame, detections=dets)
             frame = a["label"].annotate(scene=frame, detections=dets,
@@ -279,14 +272,15 @@ def render(tracks_data, identified, team_of, video_path, output,
 
 def main():
     p = argparse.ArgumentParser(
-        description="Annotate video: #NN / #?? labels + green/blue team boxes"
+        description="Annotate video: t{id} {G|S} #NN labels + team-coloured boxes"
     )
-    p.add_argument("tracks_json", help="Phase 1 tracks.json")
-    p.add_argument("identified_json", help="Phase 6 tracks_identified.json")
+    p.add_argument("detections_json", help="stage_a output (detections.json)")
+    p.add_argument("numbers_json", help="stage_c output (numbers.json)")
     p.add_argument("video", help="Source video")
     p.add_argument("--output", required=True, help="Output MP4 path")
     p.add_argument("--color-samples", type=int, default=6,
-                   help="Crops per track used to estimate jersey color")
+                   help="Crops per track used to estimate jersey color (only "
+                        "used when teams.json is missing)")
     p.add_argument("--debug-frames-dir", type=str, default=None,
                    help="If set, save 1 annotated frame per --debug-frames-step "
                         "into this folder (PNG). Useful for visual review.")
@@ -294,17 +288,17 @@ def main():
                    help="Sampling stride for debug frames (default: every 10).")
     args = p.parse_args()
 
-    tracks_json = Path(args.tracks_json)
-    id_json = Path(args.identified_json)
+    detections_json = Path(args.detections_json)
+    numbers_json = Path(args.numbers_json)
     video = Path(args.video)
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    tracks_data = json.loads(tracks_json.read_text())
-    identified = json.loads(id_json.read_text())
+    detections_data = json.loads(detections_json.read_text())
+    numbers = json.loads(numbers_json.read_text())
 
     per_track_goalie = {}
-    teams_json_path = tracks_json.with_name("tracks_teams.json")
+    teams_json_path = detections_json.with_name("teams.json")
     if teams_json_path.exists():
         print(f"Using precomputed teams from {teams_json_path}")
         teams_data = json.loads(teams_json_path.read_text())
@@ -315,7 +309,7 @@ def main():
                             for tid, info in teams_data["tracks"].items()}
     else:
         print("Sampling jersey colors per track…")
-        colors = sample_track_colors(tracks_data, video, args.color_samples)
+        colors = sample_track_colors(detections_data, video, args.color_samples)
         print(f"  colors extracted for {len(colors)} tracks")
         print("Clustering teams (k=2)…")
         team_of, team_colors = cluster_teams(colors)
@@ -326,8 +320,8 @@ def main():
     n1 = sum(1 for t in team_of.values() if t == 1)
     print(f"  tracks assigned: team 0 = {n0}, team 1 = {n1}")
 
-    # Prefer entity-level team + jersey when Phase 1.6 has been run.
-    entities_json_path = tracks_json.with_name("tracks_entities.json")
+    # Prefer entity-level team + jersey when stage_d has been run.
+    entities_json_path = detections_json.with_name("entities.json")
     entity_of_tid = None
     entity_by_id = None
     if entities_json_path.exists():
@@ -345,7 +339,7 @@ def main():
                         if args.debug_frames_dir else None)
 
     print("\nRendering annotated video…")
-    render(tracks_data, identified, team_of, video, output,
+    render(detections_data, numbers, team_of, video, output,
            entity_of_tid=entity_of_tid, entity_by_id=entity_by_id,
            per_track_goalie=per_track_goalie,
            debug_frames_dir=debug_frames_dir,

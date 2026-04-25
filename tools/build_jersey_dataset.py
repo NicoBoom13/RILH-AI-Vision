@@ -3,8 +3,8 @@ RILH-AI-Vision — consolidate jersey-number annotations into a portable
 license-clean dataset.
 
 Reads:
-  runs/test19/<video>/debug_crops/numbers/*.png  (image files)
-  runs/test19/annotations.json                   (path → label mapping)
+  runs/run19/<video>/debug_crops/numbers/*.png  (image files)
+  runs/run19/annotations.json                   (path → label mapping)
 
 Writes:
   data/jersey_numbers/
@@ -27,7 +27,7 @@ import shutil
 from pathlib import Path
 
 
-SOURCE = Path("runs/test19")
+SOURCE = Path("runs/run19")
 DEST = Path("data/jersey_numbers")
 VIDEOS = ["clip60", "clip60-2", "video04", "video05"]
 

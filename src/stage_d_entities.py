@@ -1,22 +1,22 @@
 """
-RILH-AI-Vision — Phase 1.6
-Merge Phase 1 track fragments into stable entities (one entity = one real
-player / goalie / referee) via post-hoc Re-ID clustering.
+RILH-AI-Vision — stage_d_entities
+Merge fragmented stage_a tracks into stable entities (one entity = one
+real player / goalie) via post-hoc Re-ID clustering.
 
-Inputs (three JSONs produced by earlier phases + the source video):
-  - tracks.json              (Phase 1)
-  - tracks_teams.json        (Phase 1.5)            — team_id + vote_conf
-  - tracks_identified.json   (Phase 6 identify)     — OCR jersey number
-  - video.mp4                                       — for embedding crops
+Inputs (three JSONs produced by earlier stages + the source video):
+  - detections.json   (stage_a_detect)
+  - teams.json        (stage_b_teams)        — team_id + vote_conf
+  - numbers.json      (stage_c_numbers)      — OCR jersey number
+  - video.mp4                                — for embedding crops
 
-Output: tracks_entities.json
+Output: entities.json
   Maps entity_id -> list of merged track_ids, with team_id, is_goaltender,
   jersey_number (if OCR'd), per-entity frame range and coverage, plus a
   list of unmatched singleton tracks.
 
-Signals and constraints (see docs/phase_1_6_design.md for the rationale):
+Signals and constraints (see docs/stage_d_entities_design.md for the rationale):
   - Appearance embedding: OSNet x0_25 medoid over top-conf crops per track
-  - Hard constraint — same team_id (from Phase 1.5), both sides with
+  - Hard constraint — same team_id (from stage_b), both sides with
     vote_confidence >= `--team-conf-floor`
   - Hard constraint — strict temporal non-overlap (0 frames shared)
   - Hard constraint — OCR conflict (same team, different confident
@@ -153,11 +153,11 @@ def extract_track_embeddings(tracks_data, video_path, extractor,
     return embeddings
 
 
-def index_phase15_phase6(teams, ids, team_conf_floor):
-    """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf),
-    name (+conf). Tracks with team vote_confidence < floor return
-    team_id=None (ineligible for merging into any entity with a teammate —
-    they stay as singletons)."""
+def index_stage_b_stage_c(teams, numbers, team_conf_floor):
+    """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf).
+    Tracks with team vote_confidence < floor return team_id=None
+    (ineligible for merging into any entity with a teammate — they
+    stay as singletons)."""
     team_of = {}
     is_goalie = {}
     for tid_str, info in (teams or {}).get("tracks", {}).items():
@@ -168,19 +168,13 @@ def index_phase15_phase6(teams, ids, team_conf_floor):
 
     jersey = {}
     jersey_conf = {}
-    name = {}
-    name_conf = {}
-    for tid_str, info in (ids or {}).get("tracks", {}).items():
+    for tid_str, info in (numbers or {}).get("tracks", {}).items():
         tid = int(tid_str)
         num = info.get("jersey_number")
         if num:
             jersey[tid] = str(num)
             jersey_conf[tid] = float(info.get("jersey_conf", 0.0))
-        nm = info.get("name")
-        if nm:
-            name[tid] = str(nm)
-            name_conf[tid] = float(info.get("name_conf", 0.0))
-    return team_of, is_goalie, jersey, jersey_conf, name, name_conf
+    return team_of, is_goalie, jersey, jersey_conf
 
 
 def build_edges(embeddings, frame_sets, team_of, is_goalie,
@@ -280,7 +274,7 @@ def greedy_merge(edges, frame_sets, tids_all, sim_threshold,
 
 
 def collect_entities(uf, frame_sets, team_of, is_goalie,
-                     jersey, jersey_conf, name, name_conf, total_frames):
+                     jersey, jersey_conf, total_frames):
     """Walk clusters → entity records."""
     by_root = defaultdict(list)
     for tid in uf.parent:
@@ -290,7 +284,6 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
     unmatched = []
 
     for root, members in by_root.items():
-        # Derive entity-level attributes
         team_ids = {team_of[t] for t in members if t in team_of}
         team_id = next(iter(team_ids)) if team_ids else None
         # Entity is goalie only if MORE THAN HALF the entity's frame
@@ -314,17 +307,6 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
         else:
             jn_best, jn_score = None, 0.0
 
-        # Name: majority vote weighted by OCR confidence
-        nm_votes = defaultdict(float)
-        for t in members:
-            if t in name:
-                nm_votes[name[t]] += name_conf.get(t, 0.0)
-        if nm_votes:
-            nm_best = max(nm_votes, key=nm_votes.get)
-            nm_score = nm_votes[nm_best]
-        else:
-            nm_best, nm_score = None, 0.0
-
         frames_union = set()
         for t in members:
             frames_union |= frame_sets.get(t, frozenset())
@@ -340,8 +322,6 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
             "is_goaltender": any_goalie,
             "jersey_number": jn_best,
             "jersey_score": jn_score,
-            "name": nm_best,
-            "name_score": nm_score,
             "first_frame": first_frame,
             "last_frame": last_frame,
             "total_frames_covered": covered,
@@ -353,7 +333,6 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
         else:
             entities.append(record)
 
-    # Sort entities by coverage desc for readability
     entities.sort(key=lambda e: -e["total_frames_covered"])
     return entities, sorted(unmatched)
 
@@ -393,14 +372,13 @@ def report(entities, unmatched, team_of, is_goalie):
     for i, e in enumerate(entities[:10]):
         num = f"#{e['jersey_number']}" if e["jersey_number"] else "#??"
         role = "G" if e["is_goaltender"] else "S"
-        nm = e.get("name") or ""
-        print(f"  [{i}] team={e['team_id']} {role} {num:>4s} {nm:<10s} "
+        print(f"  [{i}] team={e['team_id']} {role} {num:>4s}  "
               f"tracks={len(e['track_ids']):3d}  "
               f"frames={e['first_frame']:>4d}-{e['last_frame']:<4d}  "
               f"cover={e['coverage_pct']:>5.1f}%")
 
 
-def run(tracks_json, teams_json, ids_json, video_path, output,
+def run(detections_json, teams_json, numbers_json, video_path, output,
         samples_per_track, batch_size, sim_threshold,
         ocr_bonus, ocr_conflict_conf_floor, goalie_bonus,
         team_conf_floor, max_overlap_frames,
@@ -408,16 +386,17 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
     device = pick_device()
     print(f"Device: {device}")
 
-    tracks_data = json.loads(tracks_json.read_text())
+    detections_data = json.loads(detections_json.read_text())
     teams = json.loads(teams_json.read_text()) if teams_json.exists() else None
-    ids = json.loads(ids_json.read_text()) if ids_json.exists() else None
+    numbers = (json.loads(numbers_json.read_text())
+               if numbers_json.exists() else None)
     if teams is None:
-        raise SystemExit(f"Missing {teams_json}: run Phase 1.5 first")
-    if ids is None:
-        print(f"Warning: {ids_json} missing — OCR signal won't be used")
+        raise SystemExit(f"Missing {teams_json}: run stage_b_teams first")
+    if numbers is None:
+        print(f"Warning: {numbers_json} missing — OCR signal won't be used")
 
-    team_of, is_goalie, jersey, jersey_conf, name, name_conf = (
-        index_phase15_phase6(teams, ids, team_conf_floor)
+    team_of, is_goalie, jersey, jersey_conf = index_stage_b_stage_c(
+        teams, numbers, team_conf_floor
     )
     n_eligible = sum(1 for _ in team_of)
     n_teamless = sum(
@@ -427,17 +406,16 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
     print(f"Tracks with team label (conf ≥ {team_conf_floor}): {n_eligible}, "
           f"below floor: {n_teamless}")
     print(f"Tracks with OCR number: {len(jersey)}")
-    print(f"Tracks with OCR name:   {len(name)}")
     print(f"Tagged as goaltender: {sum(1 for v in is_goalie.values() if v)}")
 
     print(f"\nLoading OSNet ({osnet_model})…")
     extractor = FeatureExtractor(model_name=osnet_model, device=device)
 
     embeddings = extract_track_embeddings(
-        tracks_data, video_path, extractor,
+        detections_data, video_path, extractor,
         samples_per_track=samples_per_track, batch_size=batch_size,
     )
-    frame_sets = track_frame_sets(tracks_data)
+    frame_sets = track_frame_sets(detections_data)
     tids_all = set(frame_sets.keys()) | set(embeddings.keys())
 
     print(f"\nBuilding merge graph…")
@@ -460,8 +438,8 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
 
     entities, unmatched = collect_entities(
         uf, frame_sets, team_of, is_goalie,
-        jersey, jersey_conf, name, name_conf,
-        tracks_data["total_frames"],
+        jersey, jersey_conf,
+        detections_data["total_frames"],
     )
 
     issues = verify_invariants(entities, frame_sets, max_overlap_frames)
@@ -475,9 +453,9 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
     report(entities, unmatched, team_of, is_goalie)
 
     out = {
-        "source_tracks": str(tracks_json),
+        "source_detections": str(detections_json),
         "source_teams": str(teams_json),
-        "source_ids": str(ids_json),
+        "source_numbers": str(numbers_json),
         "source_video": str(video_path),
         "method": "OSNet medoid + greedy merge under team + non-overlap + OCR bonus",
         "params": {
@@ -502,16 +480,17 @@ def run(tracks_json, teams_json, ids_json, video_path, output,
 
 def main():
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — Phase 1.6: merge tracks into entities"
+        description="RILH-AI-Vision — stage_d_entities : merge tracks into entities"
     )
-    p.add_argument("tracks_json", type=str)
+    p.add_argument("detections_json", type=str,
+                   help="stage_a output (detections.json)")
     p.add_argument("teams_json", type=str,
-                   help="tracks_teams.json (Phase 1.5)")
-    p.add_argument("ids_json", type=str,
-                   help="tracks_identified.json (Phase 6 identify)")
+                   help="stage_b output (teams.json)")
+    p.add_argument("numbers_json", type=str,
+                   help="stage_c output (numbers.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON (default: <tracks_dir>/tracks_entities.json)")
+                   help="Output JSON (default: <detections_dir>/entities.json)")
     p.add_argument("--samples-per-track", type=int, default=8)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--sim-threshold", type=float, default=0.65,
@@ -519,14 +498,13 @@ def main():
     p.add_argument("--ocr-bonus", type=float, default=10.0)
     p.add_argument("--ocr-conflict-conf-floor", type=float, default=0.40,
                    help="If both tracks carry confident but different numbers, "
-                        "reject the pair. Lowered to 0.40 (was 0.55) — stricter "
-                        "merge gating prevents two different players (with "
-                        "moderately confident but conflicting OCR) from ending "
-                        "up in the same entity.")
+                        "reject the pair. Stricter merge gating prevents two "
+                        "different players (with moderately confident but "
+                        "conflicting OCR) from ending up in the same entity.")
     p.add_argument("--goalie-bonus", type=float, default=0.05)
     p.add_argument("--team-conf-floor", type=float, default=0.67,
-                   help="Drop tracks below this Phase 1.5 vote-confidence "
-                        "from the merge graph (they become unmatched).")
+                   help="Drop tracks below this stage_b vote-confidence from "
+                        "the merge graph (they become unmatched).")
     p.add_argument("--max-overlap-frames", type=int, default=0,
                    help="Strict zero by default (no shared frame between "
                         "tracks in the same entity).")
@@ -534,15 +512,15 @@ def main():
                    help="Torchreid model name (osnet_x0_25 = smallest).")
     args = p.parse_args()
 
-    tracks_json = Path(args.tracks_json)
+    detections_json = Path(args.detections_json)
     teams_json = Path(args.teams_json)
-    ids_json = Path(args.ids_json)
+    numbers_json = Path(args.numbers_json)
     video_path = Path(args.video)
     output = (Path(args.output) if args.output
-              else tracks_json.with_name("tracks_entities.json"))
+              else detections_json.with_name("entities.json"))
 
     run(
-        tracks_json, teams_json, ids_json, video_path, output,
+        detections_json, teams_json, numbers_json, video_path, output,
         samples_per_track=args.samples_per_track,
         batch_size=args.batch_size,
         sim_threshold=args.sim_threshold,
