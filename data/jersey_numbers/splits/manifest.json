@@ -1,0 +1,10 @@
+{
+  "seed": 42,
+  "neg_ratio": 1.0,
+  "train_frac": 0.8,
+  "val_frac": 0.1,
+  "rare_label_min": 10,
+  "n_train": 1712,
+  "n_val": 206,
+  "n_test": 208
+}
