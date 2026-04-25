@@ -5,24 +5,24 @@
 ## Project phases
 
 The project is organised in **7 phases**. The first 5 are part of the
-per-run pipeline (orchestrated by `src/run_project.py`); P6 and P7 are
+per-run pipeline (orchestrated by `src/run_project.py`); Phase 6 and Phase 7 are
 separate concerns that consume the run folders.
 
 | # | Phase | In pipeline? | Stages | Status |
 |---|---|---|---|---|
-| **P1** | Detect & track | ✅ yes | a (detect), b (teams), c (numbers), d (entities), e (annotate) | ✅ implemented |
-| **P2** | Virtual follow-cam | ✅ yes | a (followcam) | ✅ implemented |
-| **P3** | Rink calibration | ✅ yes (tolerant of failure) | a (rink keypoints) | ❌ parked — HockeyRink doesn't transfer to roller rinks; needs 200-300 annotated frames |
-| **P4** | Event detection | ✅ yes (stub) | a (events) | ⏳ stub no-op — placeholder for goals / shots / fouls via temporal action models |
-| **P5** | Statistics creation | ✅ yes (stub) | a (stats) | ⏳ stub no-op — placeholder for per-player / per-team aggregation |
-| **P6** | Web platform | ❌ external | — | ⏳ later — FastAPI + Next.js consuming the `runs/runNN/` folders |
-| **P7** | Multi-cam stitching, live RTMP/HLS, app mobile | ❌ external | — | ⏳ later — infra + mobile control app |
+| **Phase 1** | Detect & track | ✅ yes | a (detect), b (teams), c (numbers), d (entities), e (annotate) | ✅ implemented |
+| **Phase 2** | Virtual follow-cam | ✅ yes | a (followcam) | ✅ implemented |
+| **Phase 3** | Rink calibration | ✅ yes (tolerant of failure) | a (rink keypoints) | ❌ parked — HockeyRink doesn't transfer to roller rinks; needs 200-300 annotated frames |
+| **Phase 4** | Event detection | ✅ yes (stub) | a (events) | ⏳ stub no-op — placeholder for goals / shots / fouls via temporal action models |
+| **Phase 5** | Statistics creation | ✅ yes (stub) | a (stats) | ⏳ stub no-op — placeholder for per-player / per-team aggregation |
+| **Phase 6** | Web platform | ❌ external | — | ⏳ later — FastAPI + Next.js consuming the `runs/runNN/` folders |
+| **Phase 7** | Multi-cam stitching, live RTMP/HLS, app mobile | ❌ external | — | ⏳ later — infra + mobile control app |
 
 See `CLAUDE.md` for the full test log, design decisions, and open blockers.
 
 ## Scripts
 
-- **`src/run_project.py`** — orchestrator. Runs P1 → P5 with per-phase
+- **`src/run_project.py`** — orchestrator. Runs Phase 1 → Phase 5 with per-phase
   gates (`--skip-pN`, `--force`). Pass-through flags for backend / pose /
   OCR weights. Use this for normal end-to-end runs.
 
@@ -63,7 +63,7 @@ GPU recommended but not required. CPU-only runs at roughly 1/5 of real-time on a
 
 ### One-shot orchestrator (recommended)
 
-The `run_project.py` orchestrator runs P1 → P5 in order with sane defaults
+The `run_project.py` orchestrator runs Phase 1 → Phase 5 in order with sane defaults
 and per-phase gates:
 
 ```bash
@@ -219,7 +219,7 @@ HockeyAI is slower (medium vs. nano) but the tracking output is dramatically cle
 
 ### Stage f still has fallbacks for puck gaps
 
-Even with HockeyAI, the puck is missed in ~50 % of frames. The follow-cam (`P2.a`) handles this with:
+Even with HockeyAI, the puck is missed in ~50 % of frames. The follow-cam (`Phase 2.a`) handles this with:
 1. **Short-term puck memory** — uses last known puck position for ~15 frames after detection drops
 2. **Players-centroid fallback** — when the puck is lost too long, the camera tracks the cluster of players
 
@@ -234,16 +234,16 @@ With ~12 real entities on a roller rink (2 × (4 skaters + 1 goalie) + 1–2 ref
 | `--tracker bytetrack.yaml` (default) | 250 tracks | Baseline. |
 | `--tracker configs/bytetrack_tuned.yaml` | ~28 % fewer tracks | Longer memory (3 s buffer) + looser matching. |
 | `--tracker configs/botsort_reid.yaml` | similar count, longer individual tracks | BoT-SORT + GMC + ReID (appearance from YOLO backbone). |
-| **P1.d entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
+| **Phase 1.d entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
 
-None of these hit the ideal ~12 entities on fragmented source video. P1.d takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues.
+None of these hit the ideal ~12 entities on fragmented source video. Phase 1.d takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues.
 
 ## Workflow tips
 
 - Trim to a 60-second test clip first: `ffmpeg -i full_match.mp4 -ss 0 -t 60 -c copy clip.mp4`
 - Iterate stage-c / stage-e parameters on a single stage-a run — you don't need to re-detect each time
 - Open `detections.json` to inspect the data structure for custom analytics
-- The `--debug-overlay` output (P2.a) is your best friend for understanding why the camera moves the way it does
+- The `--debug-overlay` output (Phase 2.a) is your best friend for understanding why the camera moves the way it does
 - Always pass `python -u` for long runs — stdout is block-buffered by default, which makes progress invisible
 - Outputs are kept incrementally: `runs/run01/`, `runs/run02/`, … never overwrite a previous run, even if it failed
 - Outputs are kept incrementally: `runs/test01/`, `runs/test02/`, … never overwrite a previous run, even if it failed
