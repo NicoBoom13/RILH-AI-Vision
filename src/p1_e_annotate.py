@@ -8,9 +8,9 @@ Render the final annotated MP4 from upstream stage outputs:
     entity rollup; `#??` if no number identified)
   - Puck rendered as a dark gray bbox (no label) + short trace
 
-Inputs : detections.json (P1.a), numbers.json (P1.c), the source
-         video; auto-discovers teams.json (P1.b) and entities.json
-         (P1.d) next to detections.json if present.
+Inputs : p1_detections.json (P1.a), p1_numbers.json (P1.c), the source
+         video; auto-discovers p1_teams.json (P1.b) and p1_entities.json
+         (P1.d) next to p1_detections.json if present.
 Output : an annotated MP4 at the given --output path.
 """
 
@@ -73,7 +73,7 @@ def dominant_bgr(bgr_crop):
 
 
 def sample_track_colors(tracks_data, video_path, max_samples=6):
-    """Per-track jersey color (used as a fallback when teams.json is
+    """Per-track jersey color (used as a fallback when p1_teams.json is
     missing). Samples ``max_samples`` highest-conf detections per track,
     crops the upper-chest, returns the median dominant BGR per track."""
     by_tid = defaultdict(list)
@@ -287,13 +287,13 @@ def main():
     p = argparse.ArgumentParser(
         description="Annotate video: t{id} {G|S} #NN labels + team-coloured boxes"
     )
-    p.add_argument("detections_json", help="P1.a output (detections.json)")
-    p.add_argument("numbers_json", help="P1.c output (numbers.json)")
+    p.add_argument("detections_json", help="P1.a output (p1_detections.json)")
+    p.add_argument("numbers_json", help="P1.c output (p1_numbers.json)")
     p.add_argument("video", help="Source video")
     p.add_argument("--output", required=True, help="Output MP4 path")
     p.add_argument("--color-samples", type=int, default=6,
                    help="Crops per track used to estimate jersey color (only "
-                        "used when teams.json is missing)")
+                        "used when p1_teams.json is missing)")
     p.add_argument("--debug-frames-dir", type=str, default=None,
                    help="If set, save 1 annotated frame per --debug-frames-step "
                         "into this folder (PNG). Useful for visual review.")
@@ -311,7 +311,7 @@ def main():
     numbers = json.loads(numbers_json.read_text())
 
     per_track_goalie = {}
-    teams_json_path = detections_json.with_name("teams.json")
+    teams_json_path = detections_json.with_name("p1_teams.json")
     if teams_json_path.exists():
         print(f"Using precomputed teams from {teams_json_path}")
         teams_data = json.loads(teams_json_path.read_text())
@@ -334,7 +334,7 @@ def main():
     print(f"  tracks assigned: team 0 = {n0}, team 1 = {n1}")
 
     # Prefer entity-level team + jersey when P1.d has been run.
-    entities_json_path = detections_json.with_name("entities.json")
+    entities_json_path = detections_json.with_name("p1_entities.json")
     entity_of_tid = None
     entity_by_id = None
     if entities_json_path.exists():

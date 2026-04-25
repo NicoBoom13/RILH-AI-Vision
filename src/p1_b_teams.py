@@ -13,11 +13,11 @@ Pipeline (per sampled detection, not per frame — keeps inference tractable):
      Every crop gets a team label; each track inherits the majority vote.
 
 Inputs:
-  detections.json — produced by p1_a_detect (per-frame detections + tracks).
+  p1_detections.json — produced by p1_a_detect (per-frame detections + tracks).
   video.mp4       — the source video, sampled for the cropped frames.
 
 Outputs:
-  teams.json        — per-track team_id, vote_distribution, vote_confidence,
+  p1_teams.json        — per-track team_id, vote_distribution, vote_confidence,
                       n_color_samples; plus team_centers_bgr and cluster_margin.
   teams_preview.png — grid of torso thumbnails, one row per team, sorted by
                       vote confidence desc, with tid and vote counts overlaid.
@@ -455,10 +455,10 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         pose_imgsz, preview_cols, space, multi_grid):
     """Run the team-classification pipeline end-to-end.
 
-    Loads ``detections.json``, samples crops from the source video,
+    Loads ``p1_detections.json``, samples crops from the source video,
     extracts dominant torso colors, fits a k=2 k-means on skater-only
     crops (goalies are classified post-hoc against those centroids),
-    and writes ``teams.json`` plus a debug ``teams_preview.png``.
+    and writes ``p1_teams.json`` plus a debug ``teams_preview.png``.
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -560,10 +560,10 @@ def main():
                     "+ per-crop vote)"
     )
     p.add_argument("detections_json", type=str,
-                   help="P1.a output (detections.json)")
+                   help="P1.a output (p1_detections.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON (default: <detections_dir>/teams.json)")
+                   help="Output JSON (default: <detections_dir>/p1_teams.json)")
     p.add_argument("--samples-per-track", type=int, default=8,
                    help="Crops per track to vote on (higher = more robust, "
                         "slower inference)")
@@ -589,7 +589,7 @@ def main():
     detections_json = Path(args.detections_json)
     video = Path(args.video)
     output = (Path(args.output) if args.output
-              else detections_json.with_name("teams.json"))
+              else detections_json.with_name("p1_teams.json"))
 
     run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,

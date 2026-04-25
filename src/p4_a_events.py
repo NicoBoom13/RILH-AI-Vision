@@ -8,8 +8,8 @@ default pipeline so the wiring is exercised end-to-end, but the stub
 does no real inference — it only writes a marker JSON proving it ran.
 
 Inputs:
-  detections.json (P1.a)
-  entities.json   (P1.d)
+  p1_detections.json (P1.a)
+  p1_entities.json   (P1.d)
 
 Outputs:
   p4_events.json — {status: "stub_no_op", ran_at: "<ISO timestamp>"}
@@ -30,9 +30,9 @@ def main():
     confirm the stage ran in a given run folder."""
     p = argparse.ArgumentParser(description="P4.a events stub (no-op)")
     p.add_argument("detections_json", type=str,
-                   help="P1.a output (detections.json) — read by future impl")
+                   help="P1.a output (p1_detections.json) — read by future impl")
     p.add_argument("entities_json", type=str,
-                   help="P1.d output (entities.json) — read by future impl")
+                   help="P1.d output (p1_entities.json) — read by future impl")
     p.add_argument("--output", required=True, type=str,
                    help="Output marker JSON path")
     args = p.parse_args()

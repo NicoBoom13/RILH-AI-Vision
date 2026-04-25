@@ -6,7 +6,7 @@ the identification pipeline.
 Outputs:
 - annotated_raw.mp4 — debug video with raw bboxes, IDs, traces overlaid
                       (no team colours, no jersey numbers — that's Stage 1.e)
-- detections.json   — per-frame detection records, consumed by every
+- p1_detections.json   — per-frame detection records, consumed by every
                       downstream stage (b/c/d/e and f/g)
 
 Two model backends:
@@ -14,7 +14,7 @@ Two model backends:
   as a puck proxy — unreliable on hockey pucks)
 - --hockey-model: HockeyAI (YOLOv8m fine-tuned on ice hockey, 7 classes).
   Auto-downloaded from HuggingFace on first use. Classes are remapped so
-  the detections.json output schema stays uniform across backends:
+  the p1_detections.json output schema stays uniform across backends:
   class_id=0 for any skater/goaltender, class_id=32 for puck.
 """
 
@@ -96,11 +96,11 @@ def run(
 
     Streams every frame through the model, applies the HockeyAI class
     remap if requested, drops extra puck detections in match mode, and
-    writes both an annotated MP4 and a per-frame ``detections.json``.
+    writes both an annotated MP4 and a per-frame ``p1_detections.json``.
 
     Args:
         video_path: Source MP4.
-        output_dir: Where to write annotated_raw.mp4 + detections.json. Created if missing.
+        output_dir: Where to write annotated_raw.mp4 + p1_detections.json. Created if missing.
         model_name: YOLO weights path (resolved by ``resolve_model_path``).
         conf: Detection confidence floor for the YOLO predictor.
         imgsz: Inference image size; bigger helps small-object recall (puck).
@@ -112,7 +112,7 @@ def run(
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated_raw.mp4"
-    detections_path = output_dir / "detections.json"
+    detections_path = output_dir / "p1_detections.json"
 
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
@@ -195,7 +195,7 @@ def run(
             # spectator objects). Player + goaltender detections pass
             # through untouched. Done AFTER the tracker so puck tracks
             # already have IDs assigned; the dropped duplicates simply
-            # never reach detections.json.
+            # never reach p1_detections.json.
             # --training-mode disables this filter (e.g. drills with
             # multiple pucks on the ice at once).
             if not training_mode and len(detections) > 0:
