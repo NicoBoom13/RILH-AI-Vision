@@ -4,9 +4,10 @@ Detect & track players + puck with YOLO + ByteTrack — the entry point of
 the identification pipeline.
 
 Outputs:
-- annotated.mp4   — source video with bounding boxes, IDs, traces overlaid
-- detections.json — per-frame detection records, consumed by every
-                    downstream stage (b/c/d/e and f/g)
+- annotated_raw.mp4 — debug video with raw bboxes, IDs, traces overlaid
+                      (no team colours, no jersey numbers — that's Stage 1.e)
+- detections.json   — per-frame detection records, consumed by every
+                      downstream stage (b/c/d/e and f/g)
 
 Two model backends:
 - Default: YOLO11 pretrained on COCO (class 0 person, class 32 "sports ball"
@@ -99,7 +100,7 @@ def run(
 
     Args:
         video_path: Source MP4.
-        output_dir: Where to write annotated.mp4 + detections.json. Created if missing.
+        output_dir: Where to write annotated_raw.mp4 + detections.json. Created if missing.
         model_name: YOLO weights path (resolved by ``resolve_model_path``).
         conf: Detection confidence floor for the YOLO predictor.
         imgsz: Inference image size; bigger helps small-object recall (puck).
@@ -110,7 +111,7 @@ def run(
             only the highest-confidence puck per frame.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    annotated_path = output_dir / "annotated.mp4"
+    annotated_path = output_dir / "annotated_raw.mp4"
     detections_path = output_dir / "detections.json"
 
     cap = cv2.VideoCapture(str(video_path))
