@@ -7,81 +7,94 @@ match recording, broadcast-style virtual follow-cam, and post-match
 analytics. Built from open-source modules + custom code only.
 
 ## Current status
-- **Phase 1** ✅ implemented: dual-backend detection (YOLO11 COCO or HockeyAI)
-  + configurable tracker (ByteTrack default, BoT-SORT/ReID available).
-- **Phase 2** ✅ implemented: virtual follow-cam. Built but not heavily iterated
-  on; quality is acceptable but not the current priority.
-- **Phase 3** ❌ attempted, deferred. The obvious shortcut (the HockeyRink
-  pretrained keypoint detector from the same team as HockeyAI) **does not
-  transfer to roller rinks** — see "Test run log" below. Requires a
-  roller-specific annotated dataset + fine-tune. Parked.
-- **Phase 1.5** ✅ implemented (v3): team clustering via
-  pose-based torso crop (YOLO11-pose shoulders→hips, bbox-fallback
-  15–45% × 25–75% for dark jerseys the pose model misses) + multi-point
-  dominant averaging (3×2 grid inside the torso) + per-crop k-means
-  majority vote (fit on skaters only, goalies classified post-hoc against
-  those centroids). HSV by default (`--space bgr` also available).
-  `dominant_bgr` uses a val-only filter (no sat bias) because near-
-  grayscale jerseys like white/black carry their signal in V, not H/S.
-  User-validated on test12 as "practically perfect". Residual ~0.3% of
-  frames: referees (HockeyAI mislabels them 'player' on roller → can't
-  filter by class_name) and the Pont de Metz goalie (white pads →
-  classified pale). Further improvement needs position-based assignment
-  (needs Phase 3) or custom goalie sampling — deferred.
-- **Phase 1.6** ✅ implemented: post-hoc **Re-ID clustering** that collapses
-  fragmented tracks into stable entities (one entity = one real player /
-  goalie / ref). Uses OSNet x0_25 (via `torchreid`) medoid embedding per
-  track + greedy merge under **team constraint** (from Phase 1.5),
-  **strict temporal non-overlap**, and **OCR bonus** (from Phase 6 identify).
-  OCR conflicts are a hard block. Output: `tracks_entities.json` consumed
-  downstream by `phase6_annotate.py`. On test12 (250 tracks → 40 entities),
-  on test13 (167 tracks → 24 entities). Doesn't replace the tracker — it
-  post-processes its output. Design doc: `docs/phase_1_6_design.md`.
-- **Phase 6** ✅ jersey-number OCR via **PARSeq Hockey + RILH fine-tune**.
-  Three OCR engines plumbed in — PARSeq (`--ocr-engine parseq`, default),
-  Microsoft TrOCR (`--ocr-engine trocr`), and PARSeq+TrOCR vote
-  (`--ocr-engine together`). The PARSeq engine accepts a custom
-  `--parseq-checkpoint` to load Maria Koshkina's hockey-fine-tuned PARSeq
+- **stage_a (Detect & track)** ✅ : dual-backend detection (YOLO11 COCO or
+  HockeyAI) + configurable tracker (ByteTrack default, BoT-SORT/ReID
+  available). Match-mode default = max 1 puck per frame; pass
+  `--training-mode` to lift that.
+- **stage_b (Teams)** ✅ : team clustering via pose-based torso crop
+  (YOLO pose shoulders→hips, bbox-fallback for dark jerseys) +
+  multi-point dominant color averaging (3×2 grid) + per-crop k=2
+  k-means (fit on skaters only, goalies classified post-hoc). HSV by
+  default. `is_goaltender` per track via majority threshold (>50 % of
+  detections tagged `goaltender`). User-validated on run12 as
+  "practically perfect" except referees (HockeyAI mislabels them
+  'player' on roller — can't filter by class_name) and the Pont de Metz
+  goalie (white pads → classified pale). Improvement needs position-
+  based assignment (waits for stage_g) or custom goalie sampling —
+  deferred.
+- **stage_c (Numbers)** ✅ : per-track jersey-number OCR via **PARSeq
+  Hockey + RILH fine-tune**. Single engine (PARSeq); the previous
+  TrOCR / together engines were removed in the refactor — the digit
+  number is now the sole player-clustering key, and TrOCR brought
+  receipt-vocabulary hallucinations + 340 MB of weights for limited
+  benefit. PARSeq accepts a custom `--parseq-checkpoint` to load
+  Maria Koshkina's hockey baseline
   ([github.com/mkoshkina/jersey-number-pipeline](https://github.com/mkoshkina/jersey-number-pipeline),
-  CC-BY-NC license) and our own further fine-tuned `parseq_hockey_rilh.pt`
-  trained on 1063 manually-annotated RILH crops. **Crop strategy**
-  rewritten Koshkina-style: bbox of 4 torso keypoints + 5 px padding
-  (full shoulder→hip span, not the previous tight band). When loading a
-  custom checkpoint, the letterbox is skipped (Koshkina trained on
-  direct-resize). **Quality on held-out test set (208 crops): exact-
-  match 43.3 % (Koshkina alone) → 97.1 % (Koshkina + RILH fine-tune)**.
-  On Video 04+05 truth tracks: recall 17–29 % (TrOCR) → 55–58 %
-  (Koshkina) → **81–84 %** (Koshkina + RILH); precision 40–53 % →
-  63–68 % → **95–96 %**. Receipt hallucinations (`CASHIER` / `AMOUNT`
-  / `TAX` / etc. that TrOCR produced) are gone. Names are not yet
-  identified — PARSeq Hockey is digit-only; a name fine-tune is a
-  separate next step.
+  CC-BY-NC license) or our `parseq_hockey_rilh.pt` (trained on 1063
+  RILH crops via `tools/finetune_parseq_hockey.py`). Crop strategy is
+  Koshkina-style (bbox of 4 torso keypoints + 5 px padding). When the
+  checkpoint is loaded, letterbox is skipped (Koshkina trained on
+  direct-resize). **Quality on held-out test set (208 crops): exact
+  match 43.3 % (Koshkina alone) → 97.1 % (Koshkina + RILH).** On
+  Video 04 + 05 truth tracks: recall 55–58 % → **81–84 %** ;
+  precision 63–68 % → **95–96 %**. Names are not identified — PARSeq
+  Hockey is digit-only; a name fine-tune is a separate later step.
+- **stage_d (Entities)** ✅ : post-hoc **Re-ID clustering** that
+  collapses fragmented tracks into stable entities (one entity = one
+  real player / goalie). Uses OSNet x0_25 (via `torchreid`) medoid
+  embedding per track + greedy merge under **same-team constraint**
+  (from stage_b), **strict temporal non-overlap**, and **OCR bonus**
+  (from stage_c). OCR conflicts are a hard block. Output:
+  `entities.json` consumed downstream by `stage_e_annotate.py`. On
+  run12 (250 tracks → 40 entities), on run13 (167 tracks → 24
+  entities). Doesn't replace the tracker — it post-processes its
+  output. Entity-level `is_goaltender` is weighted by frame coverage
+  to absorb HockeyAI class flips. Design doc:
+  `docs/stage_d_entities_design.md`.
+- **stage_e (Annotate)** ✅ : final MP4 with team-coloured boxes,
+  per-track label `t{id} {G|S} #NN` (track id always shown),
+  dark-gray puck box, short traces. Auto-discovers `teams.json` and
+  `entities.json` next to `detections.json` if present. Optional
+  `--debug-frames-dir` writes 1 PNG every N frames.
+- **stage_f (Follow-cam)** ✅ : virtual broadcast cam. Built but not
+  heavily iterated on; runs in parallel to stages b–e (only depends
+  on `detections.json`).
+- **stage_g (Rink calibration)** ❌ PARKED. The obvious shortcut
+  (HockeyRink keypoints) **does not transfer to roller rinks** — see
+  run05–run07 in the test log. Needs a roller-specific annotated
+  dataset (200–300 frames) + fine-tune to unblock.
 
 ## Architecture
-Multi-pass pipeline:
-1. `src/phase1_detect_track.py` → `tracks.json` (per-frame bboxes, class IDs,
-   persistent track IDs)
-2. `src/phase1_5_teams.py` → `tracks_teams.json`: team_id (0/1) per player
-   track via k=2 on pose-based torso color (HSV default, skater-only fit,
-   goalies classified post-hoc)
-3. `src/phase2_followcam.py` → follow-cam MP4 (uses only `tracks.json`)
-4. `src/phase6_identify.py` → `tracks_identified.json`: per-track jersey
-   number via YOLO11-pose + PARSeq or TrOCR. Tight torso-back crop +
-   letterbox pad to 4:1
-5. `src/phase1_6_entities.py` → `tracks_entities.json`: fragmented tracks
-   collapsed into stable entities via OSNet embeddings + team/overlap/OCR
-   constraints (greedy merge)
-6. `src/phase6_annotate.py` → annotated MP4 with entity-level color +
-   `#NN`/`#??` labels (entity labels shared across all merged tracks).
-   Falls back to per-track labels if (5) hasn't been run.
+Linear stage pipeline `a → b → c → d → e` (with `f` and `g` optional outputs):
+
+1. `src/stage_a_detect.py` → `detections.json` (per-frame bboxes, class IDs,
+   persistent track IDs). HockeyAI YOLO + ByteTrack. Match-mode default
+   keeps top-1 puck per frame; pass `--training-mode` for drills.
+2. `src/stage_b_teams.py` → `teams.json` + `teams_preview.png`: team_id
+   (0/1) per player track via k=2 on pose-based torso color (HSV default,
+   skater-only fit, goalies classified post-hoc).
+3. `src/stage_c_numbers.py` → `numbers.json`: per-track jersey number via
+   YOLO pose + PARSeq (default baudm pretrained, or `--parseq-checkpoint
+   models/parseq_hockey_rilh.pt` for our RILH-fine-tuned model). Crop
+   strategy is Koshkina-style (full shoulder→hip torso + 5 px padding).
+4. `src/stage_d_entities.py` → `entities.json`: fragmented tracks collapsed
+   into stable entities via OSNet embeddings + team/overlap/OCR constraints
+   (greedy merge).
+5. `src/stage_e_annotate.py` → annotated MP4 with entity-level color +
+   `t{id} {G|S} #NN` labels (entity labels shared across all merged
+   tracks). Falls back to per-track labels if stage_d hasn't been run.
+6. `src/stage_f_followcam.py` → virtual broadcast follow-cam MP4 (uses
+   only `detections.json` — runs in parallel to stages b–e).
+7. `src/stage_g_rink.py` → PARKED. Rink calibration / homography. Needs
+   200–300 annotated roller-rink frames to fine-tune HockeyRink.
 
 Why multi-pass: detection is the slow step. Decoupling lets us iterate on
 cinematography, identification, and analytics without re-running inference.
 
 ## Key design choices
 
-### Detector backends (Phase 1)
-Two detector backends, selectable at runtime in `phase1_detect_track.py`:
+### Detector backends (stage_a)
+Two detector backends, selectable at runtime in `stage_a_detect.py`:
 - Default — **COCO-pretrained YOLO**, classes 0 (person) and 32 (sports ball).
   Player detection is solid; puck detection via "sports ball" is unreliable
   (<1% of frames on roller). Weights are chosen via `--model`:
@@ -94,29 +107,29 @@ Two detector backends, selectable at runtime in `phase1_detect_track.py`:
   faceoff dots, goal frame, goaltender, players, puck, referee).
   Auto-downloaded to `models/HockeyAI_model_weight.pt`. Transfers well to
   roller inline hockey. Classes are remapped at the source so the output
-  schema stays Phase-2-compatible: player + goaltender → `class_id=0`,
+  schema stays uniform across backends: player + goaltender → `class_id=0`,
   puck → `class_id=32`, referee + rink markers are dropped.
 
-Both backends write the same `tracks.json` schema (plus a `class_name`
-string per detection), so Phases 2 and 6 are backend-agnostic.
+Both backends write the same `detections.json` schema (plus a `class_name`
+string per detection), so every downstream stage is backend-agnostic.
 
-**Match vs training mode.** Phase 1 enforces 1-puck-per-frame by default
+**Match vs training mode.** stage_a enforces 1-puck-per-frame by default
 (real match conditions): when multiple puck detections appear in the
 same frame, only the highest-confidence one is kept (after the tracker
 has assigned IDs, so the dropped duplicates simply never reach
-`tracks.json`). Pass `--training-mode` to disable the filter — useful
-for drills where multiple pucks are intentionally on the ice.
+`detections.json`). Pass `--training-mode` to disable the filter —
+useful for drills where multiple pucks are intentionally on the ice.
 
-### Tracker backends (Phase 1)
+### Tracker backends (stage_a)
 Tracker is configurable via `--tracker <yaml>`:
 - `bytetrack.yaml` (default) — motion-only, fast, fragmented on occlusions.
 - `configs/bytetrack_tuned.yaml` — same tracker with `track_buffer=180` and
   `match_thresh=0.9` (longer memory, more permissive association).
 - `configs/botsort_reid.yaml` — BoT-SORT with GMC (camera motion
   compensation) and ReID (appearance features from the YOLO backbone).
-  Slower but makes individual tracks longer — see test11.
+  Slower but makes individual tracks longer — see run11.
 
-### Follow-cam (Phase 2)
+### Follow-cam (stage_f)
 - **Focus point = weighted blend of puck position and players centroid**.
   Puck gets high weight when detected; players-centroid fallback otherwise.
   Recently-seen puck positions are extrapolated for ~15 frames to bridge
@@ -125,8 +138,8 @@ Tracker is configurable via `--tracker <yaml>`:
   optionally followed by a centered boxcar pass for extra polish.
 - **Crop window clamped to frame bounds** so we never show black bars.
 
-### Jersey identification (Phase 6)
-`phase6_identify.py` pipeline, one pass per track (not per frame — keeps
+### Jersey identification (stage_c)
+`stage_c_numbers.py` pipeline, one pass per track (not per frame — keeps
 inference tractable):
 1. Sample the N highest-confidence detections for each track_id.
 2. Run the **YOLO pose model** on the full frames, match by IoU to the
@@ -137,7 +150,7 @@ inference tractable):
 3. Classify **orientation** from pose keypoints (nose + eyes → front;
    ears without nose → back; shoulders only → side).
 4. On back-facing samples, crop the dorsal region **Koshkina-style** (since
-   test19/20/21 — replaces the previous tight 15-65 % band): bbox of the
+   run19/20/21 — replaces the previous tight 15-65 % band): bbox of the
    four torso keypoints (LSHO, RSHO, LHIP, RHIP) plus 5 px padding on
    `x_min`, `x_max`, and `y_min` (no padding on `y_max` so the crop ends
    cleanly at the hips). This produces ~square crops covering the full
@@ -150,34 +163,27 @@ inference tractable):
    `models/parseq_hockey.pt` or `parseq_hockey_rilh.pt`), the letterbox
    is **disabled**: Koshkina trained with direct stretch resize and her
    model expects horizontally-stretched digits (skipping the letterbox
-   was the difference between 20 % and 80 % exact-match in the test19
+   was the difference between 20 % and 80 % exact-match in the run19
    smoke test).
-6. Run OCR (`--ocr-engine {parseq,trocr,together}`, plus optional
-   `--parseq-checkpoint <path>`):
-   - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`).
-     Accepts `--parseq-checkpoint` to load a custom Lightning checkpoint;
-     loader auto-detects whether keys carry the `model.` wrapper prefix
-     (Koshkina's vendored fork doesn't, our fine-tuned checkpoint does).
-   - **TrOCR** (`microsoft/trocr-base-printed`, via `transformers`+
-     `sentencepiece`): heavier (~340 MB) but ~2× recall on difficult text.
-     **Still useful for player NAME OCR** (PARSeq Hockey is digit-only).
-   - **Together** (PARSeq + TrOCR, confidence-weighted vote): both engines
-     run on every crop; outputs combined per-crop with `_filter_*`
-     applied per side, then: agree → bonus +0.10, solo → ×0.7 penalty,
-     conflict → reject. Was useful when both engines had complementary
-     biases on generic crops; now superseded by `parseq_hockey_rilh.pt`
-     for digits, but kept available.
-7. Keep digits only, 1–2 chars. **Vote** per track; the jersey number is
-   the majority winner.
+6. Run **PARSeq OCR** (`pytorch_lightning` + `timm` + `nltk` via
+   `torch.hub`). Single engine — TrOCR and the PARSeq+TrOCR `together`
+   vote were removed in the refactor (the digit number is now the sole
+   player-clustering key, names not used). Pass `--parseq-checkpoint
+   <path>` to load a custom Lightning checkpoint; the loader auto-
+   detects whether keys carry the `model.` wrapper prefix (Koshkina's
+   vendored fork doesn't, our fine-tuned checkpoint does). Default
+   `models/parseq_hockey_rilh.pt`.
+7. Keep digits only, 1–2 chars. **Vote** per track (≥ 2 agreeing votes
+   required) — singletons are usually noise from a single bad crop.
 8. **Merge** tracks that share the same confident number and don't overlap
    in time — they're the same player with a broken track.
 
-### Entity clustering (Phase 1.6)
-`phase1_6_entities.py` post-processes fragmented tracks into stable entities:
+### Entity clustering (stage_d)
+`stage_d_entities.py` post-processes fragmented tracks into stable entities:
 1. Per-track **OSNet x0_25 medoid embedding** (512-d, L2-normalised) over
    the top-N confidence detections.
 2. Build candidate merge graph: all pairs `(a, b)` with **same team_id
-   from Phase 1.5** (with vote_confidence ≥ 0.67 on both sides), **zero
+   from stage_b** (with vote_confidence ≥ 0.67 on both sides), **zero
    temporal overlap**, no OCR conflict (same team + different confident
    numbers rejects the pair).
 3. Edge weight = `cos_sim(emb_a, emb_b) + 10·1[same_jersey] +
@@ -185,61 +191,60 @@ inference tractable):
 4. Greedy merge in descending weight until similarity drops below
    `--sim-threshold` (default 0.65). Re-checks overlap on the merged
    cluster each time.
-5. Output: `tracks_entities.json` with `track_ids` lists, derived
-   `team_id`/`is_goaltender`/`jersey_number`/`name`/frame ranges, plus a
+5. Output: `entities.json` with `track_ids` lists, derived
+   `team_id` / `is_goaltender` / `jersey_number` / frame ranges, plus a
    list of unmatched singleton tracks.
 
-**Goalie weighting** (added test16):
-- Phase 1.5 `is_goaltender` per track now uses **majority threshold**
+**Goalie weighting** (added run16, kept after the refactor):
+- stage_b `is_goaltender` per track uses a **majority threshold**
   (>50 % of detections tagged `goaltender`), replacing the previous
   `any` rule that flipped a track on a single noisy frame.
-- Phase 1.6 entity-level `is_goaltender` is **weighted by frame
+- stage_d entity-level `is_goaltender` is **weighted by frame
   coverage**: an entity is goalie only if more than half of its merged
   tracks' total frame count comes from goalie-tagged tracks.
-- Phase 6 identify aggregation requires **≥2 agreeing votes** for the
-  winning number/name (singletons are usually noise — TrOCR can produce
-  a confident wrong digit on a single bad crop).
+- stage_c aggregation requires **≥2 agreeing votes** for the winning
+  number — singletons are usually OCR noise from a single bad crop.
 
-**Spectator handling** — see test17 for why a motion+position filter was
+**Spectator handling** — see run17 for why a motion+position filter was
 attempted then **removed**: it dropped ~50 % of real player fragments to
 catch ~30 spectators, while the 7 spectators HockeyAI tags as goalies
-slipped through anyway. The plan is to wait for **Phase 3 rink
+slipped through anyway. The plan is to wait for **stage_g rink
 calibration** (geometric "is this bbox on the ice?") to do this cleanly.
 
-Annotation (`phase6_annotate.py`):
+Annotation (`stage_e_annotate.py`):
 - Supervision-style boxes/labels/traces. Box color is **forced green or
   blue** per team.
-- **Entity-aware**: if `tracks_entities.json` exists, the label + team come
+- **Entity-aware**: if `entities.json` exists, the label + team come
   from the entity (so every merged fragment shares the same `#NN`, name
   and colour across the video). Otherwise, per-track values from
-  `tracks_teams.json` + `tracks_identified.json`.
+  `teams.json` + `numbers.json`.
 - Labels read `t{id} {G|S} #NN NAME` — track_id always shown (so user
   can give frame-level feedback), `G`/`S` from `is_goaltender`, `#??`
   if no number, name omitted if not identified.
 - **Puck**: rendered as a dark gray bbox (60,60,60) + short trace.
   No label.
-- **Spectators**: not filtered (will be addressed by Phase 3 rink
+- **Spectators**: not filtered (will be addressed by stage_g rink
   calibration). All tracked detections render — including stationary
   bystanders that HockeyAI tags as players.
 
 ## Known limitations (in priority order)
 1. **Video source quality** still affects team-colour clustering and
    any per-frame analysis on small / blurry / oblique players. Number
-   OCR is no longer the bottleneck (post test21: 95-96 % precision,
+   OCR is no longer the bottleneck (post run21: 95-96 % precision,
    81-84 % recall on truth tracks via PARSeq Hockey + RILH fine-tune).
    The remaining ~15-20 % missed numbers are mostly tracks where the
    back is never cleanly visible.
-2. **Track fragmentation** is real but **partly absorbed** by Phase 1.6
-   (test16: 435 tracks → 37 entities, of which only 5 G after the
+2. **Track fragmentation** is real but **partly absorbed** by stage_d
+   (run16: 435 tracks → 37 entities, of which only 5 G after the
    goalie majority + frame-coverage rules). HockeyAI still
    intermittently flips goaltender/player class on individual frames,
    but the majority threshold + frame-coverage weighting mostly
    neutralises that. Refs still merge into the two teams (no third
    cluster) — see #5. **Stationary spectators that HockeyAI mistags as
-   `player` or `goaltender` still pollute entities** — the Phase 1.5
-   spectator filter attempted in test17 over-filtered real players and
-   was reverted; clean fix waits for Phase 3 rink calibration.
-3. **Phase 3 calibration** is blocked on annotation. HockeyRink (ice) does
+   `player` or `goaltender` still pollute entities** — the stage_b
+   spectator filter attempted in run17 over-filtered real players and
+   was reverted; clean fix waits for stage_g rink calibration.
+3. **stage_g calibration** is blocked on annotation. HockeyRink (ice) does
    not transfer to roller rinks — the model "recognises" a rink but collapses
    all 56 keypoints to a cluster instead of localising them individually.
    Unblocking requires 200–300 annotated frames of roller rinks.
@@ -248,7 +253,7 @@ Annotation (`phase6_annotate.py`):
    Roller-specific fine-tune (Phase 4) would narrow the gap.
 5. **Refs leak into team clusters** because HockeyAI doesn't recognise
    roller-hockey referee uniforms — they're tagged `class_name='player'`.
-   Fixable by k=3 clustering in Phase 1.5 or a dedicated ref detector.
+   Fixable by k=3 clustering in stage_b or a dedicated ref detector.
 6. No event detection yet (Phase 5).
 7. Single-camera assumption. Multi-camera stitching = Phase 7.
 
@@ -257,7 +262,7 @@ Annotation (`phase6_annotate.py`):
 - All paths via `pathlib.Path`
 - CLI scripts use `argparse`
 - All model weights live under `models/` (both explicit downloads and
-  Ultralytics auto-downloads — `phase1_detect_track.py` routes bare YOLO
+  Ultralytics auto-downloads — `stage_a_detect.py` routes bare YOLO
   names like `yolo11m.pt` into `models/` via `resolve_model_path`).
 - Tracker configs live under `configs/` (YAML)
 - Outputs go under `runs/testNN/` (gitignored). **Never overwrite** a
@@ -267,11 +272,11 @@ Annotation (`phase6_annotate.py`):
 
 ## Repo layout
 ```
-src/                — pipeline phases (phase1_detect_track, phase1_5_teams,
-                       phase1_6_entities, phase2_followcam, phase3_transfer_test,
-                       phase6_identify, phase6_annotate)
+src/                — pipeline stages (stage_a_detect, stage_b_teams,
+                       stage_c_numbers, stage_d_entities, stage_e_annotate,
+                       stage_f_followcam, stage_g_rink)
 configs/            — tracker YAMLs (bytetrack_tuned, botsort_reid)
-docs/               — design notes (phase_1_6_design.md)
+docs/               — design notes (stage_d_entities_design.md)
 models/             — model weights (gitignored). Includes Ultralytics
                        YOLOs, HockeyAI, parseq_hockey.pt (Koshkina),
                        parseq_hockey_rilh.pt (our fine-tune).
@@ -280,7 +285,7 @@ runs/               — pipeline outputs per test (gitignored)
 data/               — license-clean datasets (committed). Today:
                        data/jersey_numbers/ (3528 crops + annotations
                        + train/val/test splits + LICENSE/README).
-tools/              — utilities, kept separate from src/ (not pipeline phases)
+tools/              — utilities, kept separate from src/ (not pipeline stages)
 graphify-out/       — local 3D visualization of the pipeline (gitignored,
                        see "Visualization" section)
 ```
@@ -324,76 +329,76 @@ deliverable. Full doc + edge legend in `graphify-out/graphify.md`.
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
-- **test21 — Full pipeline avec PARSeq Hockey + RILH fine-tune sur
+- **run21 — Full pipeline avec PARSeq Hockey + RILH fine-tune sur
   Video 04 + 05.** Première run de l'OCR fine-tuné en pipeline complet.
-  Réutilise `tracks.json` existants (test13 pour Video 04, test18 pour
+  Réutilise `detections.json` existants (run13 pour Video 04, run18 pour
   Video 05) — Phases 1.5, 1.6, 6 identify, 6 annotate refaites.
-  * **Phase 6 identify** : `--ocr-engine parseq --parseq-checkpoint
+  * **stage_c** : `--ocr-engine parseq --parseq-checkpoint
     models/parseq_hockey_rilh.pt`. Crop Koshkina-style (full torso).
   * **Validation contre annotations utilisateur** :
     - Video 04 (31 truth tracks) : 27 prédits, **26 corrects → précision
       96 %, recall 84 %** (vs Koshkina seul 63 %/55 %, vs TrOCR 53 %/29 %).
     - Video 05 (48 truth tracks) : 41 prédits, **39 corrects → précision
       95 %, recall 81 %** (vs Koshkina seul 68 %/58 %, vs TrOCR 40 %/17 %).
-  * **Phase 1.6 entités** : Video 04 → 24 entités (1 G, top-10 = 9 numéros
+  * **stage_d entités** : Video 04 → 24 entités (1 G, top-10 = 9 numéros
     identifiés). Video 05 → 36 entités (5 G, top-10 = 9 numéros).
-    Beaucoup plus propre qu'avant (test16 avait 17 G erronés, test18
+    Beaucoup plus propre qu'avant (run16 avait 17 G erronés, run18
     avait des hallucinations TrOCR `CASHIER`/`AMOUNT` sur les noms).
-  * **Vidéos finales** : `runs/test21/video04/annotated_numbered.mp4`
-    (120 MB), `runs/test21/video05/annotated_numbered.mp4` (206 MB).
+  * **Vidéos finales** : `runs/run21/video04/annotated_numbered.mp4`
+    (120 MB), `runs/run21/video05/annotated_numbered.mp4` (206 MB).
     Debug frames (final + phase1) au 1/10.
   * **Limitation restante** : noms de joueurs à 0 (PARSeq Hockey est
     digit-only). À traiter par soit garder TrOCR pour les noms, soit
     annoter + fine-tuner PARSeq sur des crops noms.
-  Bug intermédiaire : premier essai de test21 → 0 prédiction parce que
+  Bug intermédiaire : premier essai de run21 → 0 prédiction parce que
   le loader doublait le préfixe `model.` (Koshkina sans préfixe vs notre
   checkpoint fine-tuné qui en a un). Détection auto du préfixe ajoutée
   → re-run OK.
-- **test20 — Phase 6 identify avec PARSeq Hockey baseline (sans fine-tune)
+- **run20 — stage_c avec PARSeq Hockey baseline (sans fine-tune)
   sur Video 04 + 05.** Première intégration du loader Koshkina dans
-  `phase6_identify.py` (option `--parseq-checkpoint`). Crop Koshkina-
+  `stage_c_numbers.py` (option `--parseq-checkpoint`). Crop Koshkina-
   style (full torso). Direct-resize sans letterbox.
   * Video 04 : 59/167 tracks identifiés (35.3 %), recall 55 %.
   * Video 05 : 156/435 tracks identifiés (35.9 %), recall 58 %.
-  * Précision 63 % / 68 % — ×2-3 le recall vs TrOCR baseline test19.
+  * Précision 63 % / 68 % — ×2-3 le recall vs TrOCR baseline run19.
   * Names : 0 (PARSeq Hockey digit-only).
   Smoke test loader sur 200 crops annotés : 74 % exact match.
-- **test19 — Collecte crops dorsal sur 4 vidéos pour annotation +
+- **run19 — Collecte crops dorsal sur 4 vidéos pour annotation +
   fine-tune.** Génération de matériel d'entraînement, pas un test
-  pipeline. Réutilise `tracks.json` de test04 (clip60-2), test13
-  (Video 04), test18 (Video 05). Phase 1 nouveau sur clip60.mp4.
+  pipeline. Réutilise `detections.json` de run04 (clip60-2), run13
+  (Video 04), run18 (Video 05). stage_a nouveau sur clip60.mp4.
   * Première passe : crop bande étroite 15-65 % torse + 30 % pad.
     3 233 crops produits, hauteur médiane ~35 px → utilisateur trouve
     ça difficile à annoter à l'œil.
   * **Pivot** : crop refait à la Koshkina (full shoulder→hip + 5px pad),
     régénéré sur les 4 vidéos. **Hauteur médiane doublée** (~80 px),
     aspect ratio passé de 1.81 (large) à 0.78 (carré-ish).
-  * **3 528 crops** dans `runs/test19/{clip60,clip60-2,video04,video05}/
+  * **3 528 crops** dans `runs/run19/{clip60,clip60-2,video04,video05}/
     debug_crops/numbers/`. Annotation manuelle via
     `tools/annotate_crops.py` (web UI localhost). Annotations sauvées
-    dans `runs/test19/annotations.json` puis consolidées dans
+    dans `runs/run19/annotations.json` puis consolidées dans
     `data/jersey_numbers/` (license-clean, indépendant Koshkina).
   * **1 068 crops avec numéro** (38 numéros uniques) + **2 460 X**
     (no number visible). Top-10 numéros : #9 (112), #20 (90), #5 (77),
     #11 (73), #77 (71), #6 (69), #13 (62), #14 (60), #87 (49), #92 (43).
-- **test17 — Villeneuve vs Vierzon (Video 05) — filtre spectator multi-signal.**
-  Pipeline complet relancé. Phase 1 inchangée vs test16 (HockeyAI +
-  match-mode default, 1 puck/frame). Nouveauté Phase 1.5 : `is_static` =
+- **run17 — Villeneuve vs Vierzon (Video 05) — filtre spectator multi-signal.**
+  Pipeline complet relancé. stage_a inchangée vs run16 (HockeyAI +
+  match-mode default, 1 puck/frame). Nouveauté stage_b : `is_static` =
   `NOT goaltender AND (median_disp < 5px OR median_y > 0.74 ×
   frame_height)`. Goalies exemptés du filtre (préservation des vrais
   goalies stationnaires). Résultats :
   * **Static tracks** : **261 / 435 (60 %)** flaggés spectator,
-    excluded de Phase 6 identify, 1.6, et annotate.
-  * **Phase 6 identify** : 1605 samples (vs 3696 test16, **-57 %
+    excluded de stage_c, 1.6, et annotate.
+  * **stage_c** : 1605 samples (vs 3696 run16, **-57 %
     compute**). 16 / 174 tracks identifiés (9.2 %), 19 noms (10.9 %).
     Numéros : #2, #77, #6, #4 — moins variés qu'avant car beaucoup de
     tracks éliminées avant OCR.
-  * **Phase 1.6** : **20 entités** (vs 37 test16, **-46 %**).
+  * **stage_d** : **20 entités** (vs 37 run16, **-46 %**).
     Approche du compte réel attendu (2 équipes × 4-5 ≈ 10 entities/team).
-    Goalie entities : 6 (vs 5 test16, +1 — les 7 spectators-tagged-
+    Goalie entities : 6 (vs 5 run16, +1 — les 7 spectators-tagged-
     goalie passent toujours le filtre, contribuent à des entités G).
-    Top-10 : 3G/7S (vs 2G/8S test16).
-  * **Vidéo finale** : 176 MB (vs 209 test16). Annotated propre.
+    Top-10 : 3G/7S (vs 2G/8S run16).
+  * **Vidéo finale** : 176 MB (vs 209 run16). Annotated propre.
   * **Hallucinations TrOCR persistent au niveau entity** : entity [0]
     `S #49 CASH`, [2] `G #2 AMOUNT`, [4] `S #79 TAX`, [6] `S #79 QTY`,
     [7] `G #4 CASHIER`, [8] `S #69 MCAUD`. Le filtre spectator a viré
@@ -404,24 +409,24 @@ what differs from the immediate predecessor.
   RETIRÉ** — trop de vrais joueurs faux-droppés (~50 % des fragments)
   pour ne catcher que ~30 spectators sur 37 listés, et les 7
   spectators-tagged-goalie passaient quand même. Le bon outil sera la
-  calibration rink (Phase 3) qui répondra géométriquement « ce bbox
+  calibration rink (stage_g) qui répondra géométriquement « ce bbox
   est-il sur la glace ou en tribune ? ». Tout le reste de la v2 est
   conservé (name OCR, debug, palet gris, goalie majority + frame-
   weighting, OCR ≥2 votes, ocr_min_conf 0.30, ocr_conflict 0.40,
   training-mode default, label `t{id} G/S #num NAME`).
-- **test16 — Villeneuve vs Vierzon (Video 05) — 5 fix consolidés.** Première
+- **run16 — Villeneuve vs Vierzon (Video 05) — 5 fix consolidés.** Première
   run avec `--match-mode` (top-1 puck/frame), goalie majority rule,
   entity goalie weighted by frame coverage, OCR ≥2 votes, `ocr_min_conf`
   0.40→0.30, `ocr_conflict_conf_floor` 0.55→0.40, palet rendu dans la
-  vidéo finale. Phase 1 rejouée (1h wall-clock), Phases 1.5/6/1.6/annotate
+  vidéo finale. stage_a rejouée (1h wall-clock), Phases 1.5/6/1.6/annotate
   neuves. Résultats :
-  * **Palet** : 0 frame avec 2+ pucks ✓ (test15: 12.9% en avaient, max 5).
+  * **Palet** : 0 frame avec 2+ pucks ✓ (run15: 12.9% en avaient, max 5).
     260 → 185 puck tracks (filtrage des faux positifs).
-  * **Goalies flag Phase 1.5** : 122 → **73 tracks** (-40%) via majority
+  * **Goalies flag stage_b** : 122 → **73 tracks** (-40%) via majority
     rule (>50% des détections tagées goaltender).
-  * **Goalie entities Phase 1.6** : 17 → **5** (-71%) via frame-coverage
+  * **Goalie entities stage_d** : 17 → **5** (-71%) via frame-coverage
     weighting. Top-10 passé de 9G/1S à 2G/8S.
-  * **Numéros** : 66 (test15) → 49 tracks identifiés, **noms** 96 → 66.
+  * **Numéros** : 66 (run15) → 49 tracks identifiés, **noms** 96 → 66.
     Perte de recall attendue (≥2 votes filtre noise ET signal) —
     compensée par qualité supérieure (fin des `#3` 1-vote hallucinés).
   * **Entités** : 36 → 37. Player groups (merge par #) : 16 → 11.
@@ -435,19 +440,19 @@ what differs from the immediate predecessor.
   presque toujours taggués avec les hallucinations TrOCR `CASHIER` /
   `CASH` / `AMOUNT` ; (c) palet gris clair (180,180,180) insuffisamment
   visible. Fix suivants codés (non re-testé) : filter spectator par
-  median per-frame displacement < 5px (propagé Phase 1.5→6_identify→
+  median per-frame displacement < 5px (propagé stage_b→6_identify→
   1.6→annotate), palet BGR(60,60,60), inversion `--match-mode` →
   `--training-mode` (1-puck désormais par défaut).
-- **test15 — Villeneuve vs Vierzon (Video 05) — debug mode + name OCR.**
-  Réutilise `tracks.json` + `tracks_teams.json` de test14. Ajouts dans le
+- **run15 — Villeneuve vs Vierzon (Video 05) — debug mode + name OCR.**
+  Réutilise `detections.json` + `teams.json` de run14. Ajouts dans le
   code : name OCR (crop au-dessus du numéro, TrOCR max_new_tokens=16
   pour noms / 6 pour numéros), `--debug-crops-dir` (2606 crops number+
   name sauvés), `--debug-frames-dir --debug-frames-step 10` dans
   phase6_annotate (360 PNG). Label final enrichi `t{id} {G/S} #num NAME`.
   Résultats :
-  * Numéros : **66/435 (15.2%)** vs test14 59/435 (+12%). Noms :
-    **96/435 (21.6%)** (nouveau). 16 player groups (== test14).
-  * Entités Phase 1.6 : 36 (vs 37 test14). **17 taguées goalie** (9 du
+  * Numéros : **66/435 (15.2%)** vs run14 59/435 (+12%). Noms :
+    **96/435 (21.6%)** (nouveau). 16 player groups (== run14).
+  * Entités stage_d : 36 (vs 37 run14). **17 taguées goalie** (9 du
     top-10 en G). Anomalie confirmée.
   * Hallucinations TrOCR identifiées : `CASHIER`, `CASH`, `AMOUNT`,
     `TAX`, `QTY`, `ITEM`, `MAY` — vocabulaire "reçus de caisse" du
@@ -459,57 +464,57 @@ what differs from the immediate predecessor.
     + 2 no back sample), 6 frames pour team (vote conf 0.50-1.00
     → k-means capture mauvaise couleur, pas un floor issue), 16 pucks
     fake (12.9% frames avec 2+ pucks, max 5 simultanés). Diagnostic
-    complet qui a mené aux 5 fix de test16.
-- **test14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps).**
+    complet qui a mené aux 5 fix de run16.
+- **run14 — Villeneuve vs Vierzon (Video 05, 60s, 1920×1080 @ 60fps).**
   Pipeline complète, première run production de YOLO26L-pose.
-  * **Phase 1** ✅ HockeyAI + ByteTrack default. 3600 frames. 435 player
+  * **stage_a** ✅ HockeyAI + ByteTrack default. 3600 frames. 435 player
     tracks (313 skaters + 122 goaltenders), 260 puck tracks, puck dans
-    **1870/3600 frames (51,9 %)** — meilleur qu'test04 (42,6 %) et
-    test12 (28,6 %). Runtime ~1h wall-clock. (Note : un premier essai
+    **1870/3600 frames (51,9 %)** — meilleur qu'run04 (42,6 %) et
+    run12 (28,6 %). Runtime ~1h wall-clock. (Note : un premier essai
     accidentel avec `--model yolo26l.pt` (COCO) a été stoppé pour
     repartir sur HockeyAI.)
-  * **Phase 1.5** ✅ HSV k=2 avec `--pose-model yolo26l-pose.pt` (premier
+  * **stage_b** ✅ HSV k=2 avec `--pose-model yolo26l-pose.pt` (premier
     run production de YOLO26L-pose). 282/152 split, marge 1,95,
     27 mixed-vote tracks, 1 seul track sans sample. Pose-based : 1712
     crops (vs 656 bbox-fallback) = **72 % de crops pose** contre ~57 %
-    sur test13 avec yolo11n-pose → YOLO26L-pose améliore bien le taux
+    sur run13 avec yolo11n-pose → YOLO26L-pose améliore bien le taux
     de succès des keypoints sur les torses dark/blurry.
-  * **Phase 6 identify** ✅ TrOCR + yolo26l-pose. **59/435 (13,6 %)**,
+  * **stage_c** ✅ TrOCR + yolo26l-pose. **59/435 (13,6 %)**,
     16 groupes joueurs. Numbers trouvés (top par fragments) : #1 (10),
     #4 (4), #2/#9/#6 (3), #77/#5/#09/#19 (2). En absolu, 59 tracks
-    identifiés > test13 (39) — vidéo plus longue + plus de tracks aide.
-  * **Phase 1.6** ✅ OSNet x0_25 + greedy merge. **435 tracks → 37
+    identifiés > run13 (39) — vidéo plus longue + plus de tracks aide.
+  * **stage_d** ✅ OSNet x0_25 + greedy merge. **435 tracks → 37
     entités** (28 unmatched), 370 merges, 6061 paires skippées (overlap).
     Split 25 team 0 / 12 team 1. **Anomalie** : 19/37 entités taguées
     goaltender, dont 9 du top 10 — HockeyAI flippe massivement la classe
     `goaltender`/`player` sur cette vidéo (limitation #2 amplifiée ici).
-  * **Phase 6 annotate** ✅ entity-aware (37 entités couvrent 407 tracks).
-    Sortie : `runs/test14/annotated_numbered.mp4`.
+  * **stage_e** ✅ entity-aware (37 entités couvrent 407 tracks).
+    Sortie : `runs/run14/annotated_numbered.mp4`.
   Verdict utilisateur : détections équipe + joueurs « pas mal du tout
   mais pas parfaites ». Points de bug précis à documenter au prochain pass.
-- **test13 — Full pipeline + Phase 1.6 + TrOCR on Video 04 (France vs
-  Monde, 60s, 1920×1080 @ 30fps).** Phase 1 (HockeyAI + ByteTrack default):
-  167 player tracks (130 skaters + 37 goaltender fragments). Phase 1.5
+- **run13 — Full pipeline + stage_d + TrOCR on Video 04 (France vs
+  Monde, 60s, 1920×1080 @ 30fps).** stage_a (HockeyAI + ByteTrack default):
+  167 player tracks (130 skaters + 37 goaltender fragments). stage_b
   (HSV): 94/73 split, margin **1.46** (low — France dark-blue vs Monde
-  light-green are less contrasted than the test12 white-vs-black; 41
-  mixed-vote tracks). Phase 6 identify iterated PARSeq→TrOCR:
+  light-green are less contrasted than the run12 white-vs-black; 41
+  mixed-vote tracks). stage_c iterated PARSeq→TrOCR:
   * **PARSeq** (new tight crop + letterbox): 19/167 numbered (11.4%),
     3 player groups.
   * **TrOCR** (same crops): 39/167 (**23.4%**), **10 player groups**.
     ~2× recall. Numbers found: #1, #2, #6, #9, #10, #19, #26, #35, #98.
-  Phase 1.6 (OSNet + greedy merge) on TrOCR output: **24 entities**
+  stage_d (OSNet + greedy merge) on TrOCR output: **24 entities**
   (12/12 team split, 41 unmatched). 7/10 top entities labelled. User
   feedback: team classification still has errors on this clip (margin
   1.46 reflects real trouble); numbers not stable enough across the
   clip. Source video quality (motion blur, angle, 30 fps → less texture
   on small torsos) is now the bottleneck, not the algorithms.
-- **test12 — Full pipeline on Video 03 (Vierzon vs Pont de Metz, 30s,
-  1920×1080 @ 60fps).** Phase 1 (HockeyAI + ByteTrack default): 250 player
+- **run12 — Full pipeline on Video 03 (Vierzon vs Pont de Metz, 30s,
+  1920×1080 @ 60fps).** stage_a (HockeyAI + ByteTrack default): 250 player
   tracks (221 skaters + 29 goaltender fragments; HockeyAI does NOT tag
   refs on roller video — they leak as class_name='player'), 176 puck
-  tracks, puck in **28.6%** of frames. Phase 1 ran ~22 min wall-clock (MPS
-  + YOLOv8m @ 1280 on 60fps pushes compute). Phase 6 identify: 26/250
-  (**10.4%**), 4 player groups (#5, #7×2, #10). Phase 1.5 iterated v1→v3:
+  tracks, puck in **28.6%** of frames. stage_a ran ~22 min wall-clock (MPS
+  + YOLOv8m @ 1280 on 60fps pushes compute). stage_c: 26/250
+  (**10.4%**), 4 player groups (#5, #7×2, #10). stage_b iterated v1→v3:
   * **v1** (BGR median-per-track, bbox-torso 10–40% × full width, sat
     filter): 123/127 split, margin 2.94. Centroids OK but labels visually
     wrong — at 9s all tracks blue, at 20s goalie + skater split across
@@ -528,53 +533,53 @@ what differs from the immediate predecessor.
     fundamentally closer to the pale cluster. Accepted as final.
   Outputs preserved colocated: `tracks_teams_v1.json`,
   `tracks_teams_v2nogoalfix.json`, `annotated_numbered_v1.mp4`,
-  `annotated_numbered_v2nogoalfix.mp4`; current `tracks_teams.json` /
+  `annotated_numbered_v2nogoalfix.mp4`; current `teams.json` /
   `annotated_numbered.mp4` = v3.
-- **test11 — Phase 1 HockeyAI + BoT-SORT+ReID+GMC (clip60-2).** 349 player
+- **run11 — stage_a HockeyAI + BoT-SORT+ReID+GMC (clip60-2).** 349 player
   tracks, 221 puck tracks. Longest track 639 frames (10.7s), 5 tracks ≥500
-  frames. Longer tracks than test10 but slightly more of them — ReID from
+  frames. Longer tracks than run10 but slightly more of them — ReID from
   YOLO backbone features doesn't discriminate within a team (5 identical
   jerseys).
-- **test10 — Phase 1 HockeyAI + ByteTrack tuned (buffer=180, match=0.9).**
-  312 player tracks, 196 puck tracks. ~28% fewer tracks than test04. Helps a
+- **run10 — stage_a HockeyAI + ByteTrack tuned (buffer=180, match=0.9).**
+  312 player tracks, 196 puck tracks. ~28% fewer tracks than run04. Helps a
   bit; not enough.
-- **test09 — Phase 6 annotation v2.** Supervision-style boxes (green = team
-  0, blue = team 1) + `#NN`/`#??` labels. Uses test04 tracks + test08
+- **run09 — stage_c annotation v2.** Supervision-style boxes (green = team
+  0, blue = team 1) + `#NN`/`#??` labels. Uses run04 tracks + run08
   identifications. `annotated_numbered.mp4` — user-validated look.
-- **test08 — Phase 6 OCR on test04 tracks.** 52/433 tracks identified (12%),
+- **run08 — stage_c OCR on run04 tracks.** 52/433 tracks identified (12%),
   21 distinct jersey numbers, **11 player groups** after number-based merge.
   High-confidence numbers: #14 (424 dets across 4 tracks), #24, #25, #77,
   #78, #19, #33, #92, #93, #91. Goalies correctly labelled (class_name =
   "goaltender"). Gated by track fragmentation (many tracks too short to
   have any back-facing sample).
-- **test07 — Phase 3 HockeyRink transfer test on Video 02 (Vierzon vs
+- **run07 — stage_g HockeyRink transfer test on Video 02 (Vierzon vs
   Rethel, 12 min).** 5/20 sampled frames had detections, best ones showed
   19–21 keypoints at high confidence — **but visually all keypoints were
   clustered in the same area**. Model recognises "there is a rink" but
   cannot localise landmarks on roller rink markings. Transfer failed.
-- **test06 — Phase 3 HockeyRink transfer on Video 03 (Vierzon vs Pont de
+- **run06 — stage_g HockeyRink transfer on Video 03 (Vierzon vs Pont de
   Metz, 30s).** 1/10 frames with detection, 19 keypoints but geometrically
-  wrong. Same failure mode as test07.
-- **test05 / test05b — Phase 3 HockeyRink transfer on clip60-2.** Even with
+  wrong. Same failure mode as run07.
+- **run05 / run05b — stage_g HockeyRink transfer on clip60-2.** Even with
   very relaxed thresholds (conf=0.05, imgsz=1920, min-kp-conf=0.15),
   transfer score = 16–59%, per-frame keypoint count too low for RANSAC
   homography. Fundamentally insufficient.
-- **test04 — Phase 1 HockeyAI baseline (clip60-2, ByteTrack default).**
-  This is **the canonical Phase 1 output**. 17,860 player detections,
+- **run04 — stage_a HockeyAI baseline (clip60-2, ByteTrack default).**
+  This is **the canonical stage_a output**. 17,860 player detections,
   433 tracks; puck detected in 1,431 / 3,360 frames (**42.6%**); 254 puck
-  tracks. All downstream experiments (test08, 09, 10, 11) use this as input
+  tracks. All downstream experiments (run08, 09, 10, 11) use this as input
   or as a comparison baseline.
-- **test03 — First HockeyAI attempt.** Killed prematurely: output was not
+- **run03 — First HockeyAI attempt.** Killed prematurely: output was not
   stuck, just Python's buffered stdout making progress invisible. Learning:
   always use `python -u` for long runs.
-- **test02 — Phase 1 COCO yolo11n baseline (clip60-2).** 63,224 person dets,
+- **run02 — stage_a COCO yolo11n baseline (clip60-2).** 63,224 person dets,
   1804 track IDs, only 2 puck frames out of 3360 (0.1%). Quantifies the
   baseline weakness that motivated HockeyAI adoption. **Note: ran on
   `yolo11n.pt` (nano) for speed, not `yolo11x.pt` (best quality). If the
   COCO path is ever revisited for a fair comparison, re-run with `yolo11x`.**
-- **test01 — Phase 1 first-ever run (clip60).** Crashed at ~35% of frames:
+- **run01 — stage_a first-ever run (clip60).** Crashed at ~35% of frames:
   `supervision >=0.27` requires `tracker_id` on the `Detections` object
-  itself, not just as a local variable. Fixed in `phase1_detect_track.py`
+  itself, not just as a local variable. Fixed in `stage_a_detect.py`
   (~line 83).
 
 ## Backlog
@@ -584,32 +589,21 @@ what differs from the immediate predecessor.
 multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
 ### P0 — Itération courante
-- **Revue visuelle des MP4 test21** par utilisateur sur Video 04 + 05.
+- **Revue visuelle des MP4 run21** par utilisateur sur Video 04 + 05.
   Confirmer : (a) numéros stables sur les players principaux,
   (b) goalies bien tagués, (c) erreurs résiduelles à catégoriser
   pour la prochaine itération. Aucun travail à faire de mon côté
   tant que le verdict n'est pas posé. — XS
 
 ### P1 — Court terme
-- **Name OCR** — manquant aujourd'hui (PARSeq Hockey est digit-only,
-  donc 0 noms identifiés sur test21). Deux chemins :
-  (a) garder TrOCR en parallèle uniquement pour les noms (~340 MB +
-  hallucinations à filtrer via stop-list) ;
-  (b) annoter ~500 crops avec noms via `tools/annotate_crops.py`
-  adapté + fine-tuner PARSeq Hockey sur ces noms (probablement
-  meilleur résultat, requiert annotation). — S–L
-- **Cache pose entre Phase 1.5 et Phase 6 identify** : aujourd'hui
-  yolo26l-pose tourne 2× sur les mêmes frames. Écrire `pose_cache.json`
-  en P1.5 et le lire en P6 sauve ~20-30 % wall-clock pipeline. — S
-- **Phase 1.5 + Phase 6 identify en parallèle** (processus séparés).
-  Gain ~10-20 % supplémentaire (overlap GPU/CPU). — S
-- **Stop-list TrOCR** comme fallback si on garde TrOCR pour les
-  noms (cas où PARSeq est silencieux et TrOCR solo passe le ×0.7) :
-  `CASHIER`, `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY`.
-  À ajouter dans `_filter_name` de `phase6_identify.py`. — XS
+- **Cache pose entre stage_b et stage_c** : aujourd'hui yolo26l-pose
+  tourne 2× sur les mêmes frames. Écrire `pose_cache.json` en stage_b
+  et le lire en stage_c sauve ~20-30 % wall-clock pipeline. — S
+- **stage_b + stage_c en parallèle** (processus séparés). Gain
+  ~10-20 % supplémentaire (overlap GPU/CPU). — S
 
 ### P2 — Court-moyen terme
-- **Fix team classification Phase 1.5** : sur test15, 6 tracks/435 mal
+- **Fix team classification stage_b** : sur run15, 6 tracks/435 mal
   classés avec `vote_confidence` 0.50–1.00 (donc le k-means capture la
   mauvaise couleur, pas un floor issue). Pistes par effort croissant :
   (a) augmenter `--samples-per-track` 8 → 20 ;
@@ -628,7 +622,7 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
   Bloqueur = annotation. Débloque puck + goalie + classes refs. — XL
 - **Fine-tune TrOCR** sur crops jersey RILH (numéros + noms). Élimine les
   hallucinations receipt-style. — L
-- **Phase 3** : calibration rink + map 2D. Bloqué sur 200–300 annotations
+- **stage_g** : calibration rink + map 2D. Bloqué sur 200–300 annotations
   keypoints rink roller. — XL
 - **Phase 5** : détection événements (buts, tirs, fautes). — XL
 - **Phase 7** : plateforme web FastAPI + Next.js. — L
@@ -636,16 +630,16 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
 ## Roadmap
 
-**Phase 3 — Rink calibration & 2D map** (blocked on annotation)
-- HockeyRink transfer failed (see test05–07). Unblocking requires 200–300
+**stage_g — Rink calibration & 2D map** (blocked on annotation)
+- HockeyRink transfer failed (see run05–07). Unblocking requires 200–300
   roller-hockey rink keypoint annotations and fine-tuning HockeyRink on them.
 - Alternative path: classical line detection + manual keyframe
   recalibration (every N seconds). Not prototyped.
 
 **Phase 4 — Roller-specific fine-tune** (2–4 weeks, when we need it)
-- HockeyAI covers the player and puck cases reasonably (test04). Would
+- HockeyAI covers the player and puck cases reasonably (run04). Would
   narrow the gap on motion-blurred / small / poorly-lit pucks, and help
-  Phase 6 by producing longer tracks.
+  stage_c by producing longer tracks.
 - Build a roller-hockey dataset (CVAT or Roboflow); bootstrap with HockeyAI
   pre-labels.
 - Fine-tune from HockeyAI weights (preferred) or from YOLO11.
@@ -655,9 +649,9 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 - Goals, shots, penalties — temporal action models (TSN, MoViNet,
   SlowFast). Likely needs a custom labelled dataset.
 
-**Phase 6 — Player identification** (partial)
+**stage_c — Player identification** (partial)
 - OCR paths implemented: PARSeq (default) + TrOCR (`--ocr-engine trocr`).
-- Phase 1.6 (entity clustering) is done and absorbs a lot of the
+- stage_d (entity clustering) is done and absorbs a lot of the
   fragmentation. Remaining bottleneck is **OCR recall on small / blurry
   numbers** — addressed either by better source video (see limitation 1)
   or by an eventual Phase 4 fine-tune on jersey-number crops.
@@ -715,7 +709,7 @@ pondérées, sans rien jeter. Pondération par modèle possible (ex: HockeyAI
   `weighted_boxes_fusion(boxes_list, scores_list, labels_list, weights=...,
   iou_thr=0.5, skip_box_thr=0.0001)`.
 - Point d'insertion dans notre pipeline : juste avant l'écriture de
-  `tracks.json` dans `phase1_detect_track.py`. Tout l'aval reste compatible.
+  `detections.json` dans `stage_a_detect.py`. Tout l'aval reste compatible.
 
 ### Coût/bénéfice — pas une priorité actuelle
 
@@ -724,7 +718,7 @@ Options classées du plus rentable au moins rentable :
 1. **`--imgsz 1280` ou `1536` avec HockeyAI seul.** Gain probable sur palet,
    coût quasi-nul. À tester *avant* toute approche ensemble.
 2. **Re-ID clustering post-hoc sous contrainte d'équipe** — *déjà implémenté
-   en Phase 1.6*. Ciblait le vrai blocage actuel (fragmentation tracks
+   en stage_d*. Ciblait le vrai blocage actuel (fragmentation tracks
    300 → ~12 entités, facteur 25). Aucun ensemble de détecteurs ne fera ça.
 3. **Fine-tune HockeyAI sur 500–1000 frames RILH annotées** (Roadmap
    Phase 4). Battra tout ensemble de modèles ice-hockey à coup sûr.
@@ -742,11 +736,11 @@ et robustesse pré-entraînée.
 
 ## Datasets (for later fine-tunes)
 No public roller-hockey CV dataset currently. Build our own:
-- Use HockeyAI (Phase 1 output) to bootstrap annotations semi-automatically
+- Use HockeyAI (stage_a output) to bootstrap annotations semi-automatically
 - Roboflow Universe has ice hockey datasets — transfer is partial (HockeyAI
   works, HockeyRink doesn't)
 - Annotate ~500–1000 frames with puck visible for the first puck fine-tune
-- For Phase 3: ~200–300 frames with rink keypoints annotated (56-keypoint
+- For stage_g: ~200–300 frames with rink keypoints annotated (56-keypoint
   schema from the HockeyRink dataset, restricted to landmarks visible on
   roller rinks — centre circle, face-off dots, goal lines, corners)
 
@@ -754,18 +748,18 @@ No public roller-hockey CV dataset currently. Build our own:
 - Test on a 60s clip first: `ffmpeg -i input.mp4 -ss 0 -t 60 -c copy clip.mp4`
 - **Always use `python -u`** when launching long runs to a file — stdout is
   block-buffered otherwise, which makes progress invisible and triggered a
-  false "stuck" diagnosis in test03.
+  false "stuck" diagnosis in run03.
 - For any serious puck work, pass `--hockey-model` — the COCO default is
   only useful when iterating fast and puck quality doesn't matter.
-- Camera too slow in Phase 2 → raise `--alpha`. Camera jittery → lower it,
+- Camera too slow in stage_f → raise `--alpha`. Camera jittery → lower it,
   or raise `--polish-window`.
 - Still missing puck detections → `--imgsz 1280` or 1536 (slower but much
   better on small objects).
-- Use `--debug-overlay` (Phase 2) to understand the focus trajectory.
+- Use `--debug-overlay` (stage_f) to understand the focus trajectory.
 - Tracker comparisons: pass `--tracker configs/bytetrack_tuned.yaml` or
   `configs/botsort_reid.yaml`. BoT-SORT+ReID is ~same speed as ByteTrack
   in practice (ReID features come from the YOLO backbone, no extra model
   download).
-- Run outputs are incremental: `runs/test01/`, `runs/test02/`, … Don't
+- Run outputs are incremental: `runs/run01/`, `runs/run02/`, … Don't
   overwrite a previous run even if it failed — past tracks + videos are
   useful for diffing the effect of a parameter change.
