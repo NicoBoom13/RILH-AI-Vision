@@ -219,7 +219,7 @@ HockeyAI is slower (medium vs. nano) but the tracking output is dramatically cle
 
 ### Stage f still has fallbacks for puck gaps
 
-Even with HockeyAI, the puck is missed in ~50 % of frames. The follow-cam (`Phase 2.a`) handles this with:
+Even with HockeyAI, the puck is missed in ~50 % of frames. The follow-cam (`Stage 2.a`) handles this with:
 1. **Short-term puck memory** — uses last known puck position for ~15 frames after detection drops
 2. **Players-centroid fallback** — when the puck is lost too long, the camera tracks the cluster of players
 
@@ -234,16 +234,16 @@ With ~12 real entities on a roller rink (2 × (4 skaters + 1 goalie) + 1–2 ref
 | `--tracker bytetrack.yaml` (default) | 250 tracks | Baseline. |
 | `--tracker configs/bytetrack_tuned.yaml` | ~28 % fewer tracks | Longer memory (3 s buffer) + looser matching. |
 | `--tracker configs/botsort_reid.yaml` | similar count, longer individual tracks | BoT-SORT + GMC + ReID (appearance from YOLO backbone). |
-| **Phase 1.d entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
+| **Stage 1.d entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
 
-None of these hit the ideal ~12 entities on fragmented source video. Phase 1.d takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues.
+None of these hit the ideal ~12 entities on fragmented source video. Stage 1.d takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues.
 
 ## Workflow tips
 
 - Trim to a 60-second test clip first: `ffmpeg -i full_match.mp4 -ss 0 -t 60 -c copy clip.mp4`
 - Iterate stage-c / stage-e parameters on a single stage-a run — you don't need to re-detect each time
 - Open `detections.json` to inspect the data structure for custom analytics
-- The `--debug-overlay` output (Phase 2.a) is your best friend for understanding why the camera moves the way it does
+- The `--debug-overlay` output (Stage 2.a) is your best friend for understanding why the camera moves the way it does
 - Always pass `python -u` for long runs — stdout is block-buffered by default, which makes progress invisible
 - Outputs are kept incrementally: `runs/run01/`, `runs/run02/`, … never overwrite a previous run, even if it failed
 - Outputs are kept incrementally: `runs/test01/`, `runs/test02/`, … never overwrite a previous run, even if it failed

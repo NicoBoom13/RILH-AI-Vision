@@ -90,11 +90,11 @@ def run_p1_detect_track(video, out, args):
     """Run all 5 stages of Phase 1 (a → b → c → d → e) sequentially.
 
     Halts on first failure: each stage's outputs feed the next, so a
-    failed Phase 1.a means Phase 1.b can't run.
+    failed Stage 1.a means Stage 1.b can't run.
     """
     print(f"\n========== Phase 1 — Detect & Track ==========")
 
-    # Phase 1.a — detect + track
+    # Stage 1.a — detect + track
     cmd = [PYTHON, "-u", str(SRC / "p1_a_detect.py"),
            str(video), "--output", str(out)]
     if args.hockey_model:
@@ -105,55 +105,55 @@ def run_p1_detect_track(video, out, args):
         cmd.extend(["--model", args.model])
     cmd.extend(["--conf", str(args.conf), "--imgsz", str(args.imgsz),
                 "--tracker", args.tracker])
-    if not step("Phase 1.a — Detect & track", cmd,
+    if not step("Stage 1.a — Detect & track", cmd,
                 [out / "detections.json"], args.force):
-        raise SystemExit("Phase 1.a failed — halting Phase 1")
+        raise SystemExit("Stage 1.a failed — halting Phase 1")
 
-    # Phase 1.b — teams
+    # Stage 1.b — teams
     cmd = [PYTHON, "-u", str(SRC / "p1_b_teams.py"),
            str(out / "detections.json"), str(video),
            "--pose-model", args.pose_model]
-    if not step("Phase 1.b — Teams", cmd,
+    if not step("Stage 1.b — Teams", cmd,
                 [out / "teams.json"], args.force):
-        raise SystemExit("Phase 1.b failed — halting Phase 1")
+        raise SystemExit("Stage 1.b failed — halting Phase 1")
 
-    # Phase 1.c — numbers (jersey OCR)
+    # Stage 1.c — numbers (jersey OCR)
     cmd = [PYTHON, "-u", str(SRC / "p1_c_numbers.py"),
            str(out / "detections.json"), str(video),
            "--pose-model", args.pose_model]
     if args.parseq_checkpoint:
         cmd.extend(["--parseq-checkpoint", args.parseq_checkpoint])
-    if not step("Phase 1.c — Numbers", cmd,
+    if not step("Stage 1.c — Numbers", cmd,
                 [out / "numbers.json"], args.force):
-        raise SystemExit("Phase 1.c failed — halting Phase 1")
+        raise SystemExit("Stage 1.c failed — halting Phase 1")
 
-    # Phase 1.d — entities (Re-ID merge)
+    # Stage 1.d — entities (Re-ID merge)
     cmd = [PYTHON, "-u", str(SRC / "p1_d_entities.py"),
            str(out / "detections.json"), str(out / "teams.json"),
            str(out / "numbers.json"), str(video)]
-    if not step("Phase 1.d — Entities", cmd,
+    if not step("Stage 1.d — Entities", cmd,
                 [out / "entities.json"], args.force):
-        raise SystemExit("Phase 1.d failed — halting Phase 1")
+        raise SystemExit("Stage 1.d failed — halting Phase 1")
 
-    # Phase 1.e — annotate (final MP4)
+    # Stage 1.e — annotate (final MP4)
     cmd = [PYTHON, "-u", str(SRC / "p1_e_annotate.py"),
            str(out / "detections.json"), str(out / "numbers.json"),
            str(video), "--output", str(out / "annotated.mp4")]
-    if not step("Phase 1.e — Annotate", cmd,
+    if not step("Stage 1.e — Annotate", cmd,
                 [out / "annotated.mp4"], args.force):
-        raise SystemExit("Phase 1.e failed — halting Phase 1")
+        raise SystemExit("Stage 1.e failed — halting Phase 1")
 
 
 def run_p2_followcam(video, out, args):
-    """Run Phase 2 — Virtual follow-cam. Depends on detections.json from Phase 1.a."""
+    """Run Phase 2 — Virtual follow-cam. Depends on detections.json from Stage 1.a."""
     print(f"\n========== Phase 2 — Virtual follow-cam ==========")
     if not (out / "detections.json").exists():
-        print("  ⚠ detections.json missing — Phase 2 needs Phase 1.a; skipping")
+        print("  ⚠ detections.json missing — Phase 2 needs Stage 1.a; skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p2_a_followcam.py"),
            str(out / "detections.json"), str(video),
            "--output", str(out / "followcam.mp4")]
-    step("Phase 2.a — Follow-cam", cmd, [out / "followcam.mp4"], args.force)
+    step("Stage 2.a — Follow-cam", cmd, [out / "followcam.mp4"], args.force)
 
 
 def run_p3_rink(video, out, args):
@@ -164,7 +164,7 @@ def run_p3_rink(video, out, args):
     print(f"\n========== Phase 3 — Rink calibration (parked) ==========")
     cmd = [PYTHON, "-u", str(SRC / "p3_a_rink.py"),
            str(video), "--output", str(out)]
-    ok = step("Phase 3.a — Rink keypoints", cmd,
+    ok = step("Stage 3.a — Rink keypoints", cmd,
               [out / "rink_keypoints.json"], args.force)
     if not ok:
         print("  ⚠ Phase 3 is parked (HockeyRink doesn't transfer to roller). "
@@ -180,7 +180,7 @@ def run_p4_events(out, args):
     cmd = [PYTHON, "-u", str(SRC / "p4_a_events.py"),
            str(out / "detections.json"), str(out / "entities.json"),
            "--output", str(out / "p4_events.json")]
-    step("Phase 4.a — Events", cmd, [out / "p4_events.json"], args.force)
+    step("Stage 4.a — Events", cmd, [out / "p4_events.json"], args.force)
 
 
 def run_p5_stats(out, args):
@@ -192,7 +192,7 @@ def run_p5_stats(out, args):
     cmd = [PYTHON, "-u", str(SRC / "p5_a_stats.py"),
            str(out / "entities.json"), str(out / "numbers.json"),
            "--output", str(out / "p5_stats.json")]
-    step("Phase 5.a — Stats", cmd, [out / "p5_stats.json"], args.force)
+    step("Stage 5.a — Stats", cmd, [out / "p5_stats.json"], args.force)
 
 
 def main():
@@ -226,21 +226,21 @@ def main():
     # Pass-through to Phase 1 stages
     g1 = p.add_argument_group("Phase 1 options (passed through)")
     g1.add_argument("--hockey-model", action="store_true",
-                    help="Phase 1.a: use HockeyAI weights (recommended)")
+                    help="Stage 1.a: use HockeyAI weights (recommended)")
     g1.add_argument("--training-mode", action="store_true",
-                    help="Phase 1.a: disable 1-puck-per-frame filter")
+                    help="Stage 1.a: disable 1-puck-per-frame filter")
     g1.add_argument("--model", type=str, default=None,
-                    help="Phase 1.a: COCO YOLO weights (ignored when --hockey-model)")
+                    help="Stage 1.a: COCO YOLO weights (ignored when --hockey-model)")
     g1.add_argument("--conf", type=float, default=0.3,
-                    help="Phase 1.a: detection confidence threshold")
+                    help="Stage 1.a: detection confidence threshold")
     g1.add_argument("--imgsz", type=int, default=1280,
-                    help="Phase 1.a: inference image size")
+                    help="Stage 1.a: inference image size")
     g1.add_argument("--tracker", type=str, default="bytetrack.yaml",
-                    help="Phase 1.a: tracker config")
+                    help="Stage 1.a: tracker config")
     g1.add_argument("--pose-model", type=str, default="yolo26l-pose.pt",
-                    help="Phase 1.b + Phase 1.c: YOLO pose weights")
+                    help="Stage 1.b + Stage 1.c: YOLO pose weights")
     g1.add_argument("--parseq-checkpoint", type=str, default=None,
-                    help="Phase 1.c: custom PARSeq checkpoint (default = baudm "
+                    help="Stage 1.c: custom PARSeq checkpoint (default = baudm "
                          "pretrained); use models/parseq_hockey_rilh.pt for "
                          "the RILH-fine-tuned hockey model")
 
