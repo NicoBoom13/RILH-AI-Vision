@@ -8,7 +8,7 @@ glue (which file feeds which, which flags pass through, what to skip).
 
 Pipeline (in execution order):
   Phase 1 — Detect & track       — 5 stages (a..e), full identification
-  Phase 2 — Virtual follow-cam   — 1 stage (a), broadcast camera
+  Phase 2 — Virtual follow-cam   — 1 stage (a), parked (opt-in via --run-p2)
   Phase 3 — Rink calibration     — 1 stage (a), parked / tolerant of failure
   Phase 4 — Event detection      — 1 stage (a), STUB
   Phase 5 — Statistics creation  — 1 stage (a), STUB
@@ -24,12 +24,18 @@ Usage:
   # Skip a phase entirely:
   python src/run_project.py videos/match.mp4 --output runs/run23 --skip-p3
 
+  # Opt in to a parked phase (Phase 2 follow-cam is off by default):
+  python src/run_project.py videos/match.mp4 --output runs/run23 --run-p2
+
   # Force re-run even if outputs already exist:
   python src/run_project.py videos/match.mp4 --output runs/run23 --force
 
-By default each phase is ON, and each stage skips its own work if its
-output file already exists (incremental re-runs cost nothing). Pass
-`--force` to re-run all enabled phases from scratch.
+By default Phase 1, 3, 4, 5 are ON and Phase 2 is OFF (parked: the
+follow-cam output isn't usable yet, and unlike Phase 3 it doesn't fail
+fast — it spends minutes producing an unwatchable MP4). Pass `--run-p2`
+to opt back in. Each stage skips its own work if its output file already
+exists (incremental re-runs cost nothing). Pass `--force` to re-run all
+enabled phases from scratch.
 """
 
 import argparse
@@ -145,8 +151,12 @@ def run_p1_detect_track(video, out, args):
 
 
 def run_p2_followcam(video, out, args):
-    """Run Phase 2 — Virtual follow-cam. Depends on p1_a_detections.json from Stage 1.a."""
-    print(f"\n========== Phase 2 — Virtual follow-cam ==========")
+    """Run Phase 2 — Virtual follow-cam. Currently parked: the cinematography
+    output isn't usable yet (jittery, mis-framed), and the stage takes minutes
+    to produce that unusable MP4 — so unlike Phase 3 (which fails fast and is
+    kept on by default to exercise the wiring) Phase 2 is opt-in via
+    `--run-p2`. Depends on p1_a_detections.json from Stage 1.a."""
+    print(f"\n========== Phase 2 — Virtual follow-cam (parked) ==========")
     if not (out / "p1_a_detections.json").exists():
         print("  ⚠ p1_a_detections.json missing — Phase 2 needs Stage 1.a; skipping")
         return
@@ -212,8 +222,9 @@ def main():
     g = p.add_argument_group("Phase gates")
     g.add_argument("--skip-p1", action="store_true",
                    help="Skip Phase 1 (Detect & track + teams + numbers + entities + annotate)")
-    g.add_argument("--skip-p2", action="store_true",
-                   help="Skip Phase 2 (Virtual follow-cam)")
+    g.add_argument("--run-p2", action="store_true",
+                   help="Opt in to Phase 2 (Virtual follow-cam) — parked, "
+                        "produces an unusable MP4; off by default")
     g.add_argument("--skip-p3", action="store_true",
                    help="Skip Phase 3 (Rink calibration, parked)")
     g.add_argument("--skip-p4", action="store_true",
@@ -256,6 +267,10 @@ def main():
 
     enabled = []
     for n in (1, 2, 3, 4, 5):
+        if n == 2:
+            if args.run_p2:
+                enabled.append("Phase 2")
+            continue
         if not getattr(args, f"skip_p{n}"):
             enabled.append(f"Phase {n}")
     print("=" * 64)
@@ -270,7 +285,7 @@ def main():
     t_start = time.time()
     if not args.skip_p1:
         run_p1_detect_track(video, out, args)
-    if not args.skip_p2:
+    if args.run_p2:
         run_p2_followcam(video, out, args)
     if not args.skip_p3:
         run_p3_rink(video, out, args)

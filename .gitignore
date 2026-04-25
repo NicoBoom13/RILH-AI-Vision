@@ -24,3 +24,7 @@ videos/
 
 # Graphify visualization output (regeneratable via regen.py, kept local-only)
 graphify-out/
+
+# Per-machine Claude Code + direnv state
+.claude/
+.envrc

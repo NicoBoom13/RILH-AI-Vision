@@ -4,7 +4,7 @@
   "train_frac": 0.8,
   "val_frac": 0.1,
   "rare_label_min": 10,
-  "n_train": 1712,
-  "n_val": 206,
-  "n_test": 208
+  "n_train": 3337,
+  "n_val": 412,
+  "n_test": 407
 }

@@ -30,15 +30,19 @@ analytics. Built from open-source modules + custom code only.
   benefit. PARSeq accepts a custom `--parseq-checkpoint` to load
   Maria Koshkina's hockey baseline
   ([github.com/mkoshkina/jersey-number-pipeline](https://github.com/mkoshkina/jersey-number-pipeline),
-  CC-BY-NC license) or our `parseq_hockey_rilh.pt` (trained on 1063
-  RILH crops via `tools/finetune_parseq_hockey.py`). Crop strategy is
+  CC-BY-NC license) or our `parseq_hockey_rilh.pt` (trained on 2078
+  numbered RILH crops + 3119 X-negatives across 6 videos, 48 unique
+  numbers, via `tools/finetune_parseq_hockey.py`). Crop strategy is
   Koshkina-style (bbox of 4 torso keypoints + 5 px padding). When the
   checkpoint is loaded, letterbox is skipped (Koshkina trained on
-  direct-resize). **Quality on held-out test set (208 crops): exact
-  match 43.3 % (Koshkina alone) → 97.1 % (Koshkina + RILH).** On
-  Video 04 + 05 truth tracks: recall 55–58 % → **81–84 %** ;
-  precision 63–68 % → **95–96 %**. Names are not identified — PARSeq
-  Hockey is digit-only; a name fine-tune is a separate later step.
+  direct-resize). **Quality on held-out test set (407 crops, 6 videos):
+  exact match 35.4 % (Koshkina alone) → 96.6 % (Koshkina + RILH)** —
+  best epoch 3, val 0.968. The earlier 4-video test-set scored 43 % →
+  97 %; the new test set is harder (more diversity / more X-negatives /
+  Video 06 + 07 added) and the model still holds. On Video 04 + 05
+  truth tracks: recall 55–58 % → **81–84 %** ; precision 63–68 % →
+  **95–96 %**. Names are not identified — PARSeq Hockey is digit-only;
+  a name fine-tune is a separate later step.
 - **Stage 1.d (Entities)** ✅ : post-hoc **Re-ID clustering** that
   collapses fragmented tracks into stable entities (one entity = one
   real player / goalie). Uses OSNet x0_25 (via `torchreid`) medoid
@@ -56,9 +60,15 @@ analytics. Built from open-source modules + custom code only.
   dark-gray puck box, short traces. Auto-discovers `p1_b_teams.json` and
   `p1_d_entities.json` next to `p1_a_detections.json` if present. Optional
   `--debug-frames-dir` writes 1 PNG every N frames.
-- **Stage 2.a (Follow-cam)** ✅ : virtual broadcast cam. Built but not
-  heavily iterated on; runs in parallel to stages b–e (only depends
-  on `p1_a_detections.json`).
+- **Stage 2.a (Follow-cam)** ❌ PARKED : virtual broadcast cam. The
+  current output isn't usable (jittery framing, mis-targeted focus on
+  fast plays) and the stage takes minutes to render an unwatchable MP4.
+  Unlike Phase 3 (which fails fast and is left ON to exercise the
+  wiring), Phase 2 is **opt-in via `--run-p2`** in the orchestrator —
+  off by default to avoid wasting wall-clock per run. The stage script
+  itself (`p2_a_followcam.py`) still works standalone for direct
+  iteration. Only depends on `p1_a_detections.json`, so it can be
+  re-enabled later without re-running Phase 1.
 - **Stage 3.a (Rink calibration)** ❌ PARKED. The obvious shortcut
   (HockeyRink keypoints) **does not transfer to roller rinks** — see
   run05–run07 in the test log. Needs a roller-specific annotated
@@ -75,7 +85,7 @@ Big chunks of work, each with its own concern:
 | Phase | Name | In pipeline? |
 |---|---|---|
 | **Phase 1** | Detect & track (full identification) | ✅ orchestrated |
-| **Phase 2** | Virtual follow-cam | ✅ orchestrated |
+| **Phase 2** | Virtual follow-cam | ⏸ orchestrated but parked (opt-in via `--run-p2`) |
 | **Phase 3** | Rink calibration | ✅ orchestrated (parked, tolerant of failure) |
 | **Phase 4** | Event detection | ✅ orchestrated (stub) |
 | **Phase 5** | Statistics creation | ✅ orchestrated (stub) |
@@ -83,8 +93,9 @@ Big chunks of work, each with its own concern:
 | **Phase 7** | Multi-cam stitching, live RTMP/HLS, app mobile | ❌ external — infra + mobile |
 
 The orchestrator `src/run_project.py` runs Phase 1 → Phase 5 in sequence with
-per-phase gates (`--skip-pN`, `--force`). Phase 6 and Phase 7 are services /
-infra that live outside the per-run pipeline.
+per-phase gates (`--skip-pN`, `--force`). **Phase 2 is OFF by default** because
+its current output isn't usable; pass `--run-p2` to opt back in. Phase 6 and
+Phase 7 are services / infra that live outside the per-run pipeline.
 
 ### Level 2 — internal stages of each phase
 
@@ -105,10 +116,12 @@ Each phase decomposes into one or more stages, named `pN_x_*.py`:
 5. `src/p1_e_annotate.py` → annotated MP4 with team-coloured boxes +
    `t{id} {G|S} #NN` labels.
 
-**Phase 2 — Virtual follow-cam** (1 stage):
+**Phase 2 — Virtual follow-cam** (1 stage, parked):
 
-- `src/p2_a_followcam.py` → `followcam.mp4`. Reads only `p1_a_detections.json`,
-  runs in parallel to Phase 1 stages b-e.
+- `src/p2_a_followcam.py` → `followcam.mp4`. Reads only `p1_a_detections.json`.
+  Currently parked: output isn't usable yet. Off by default in the
+  orchestrator; opt back in with `--run-p2`. Still callable standalone for
+  direct iteration.
 
 **Phase 3 — Rink calibration** (1 stage, parked):
 
@@ -164,7 +177,9 @@ Tracker is configurable via `--tracker <yaml>`:
   compensation) and ReID (appearance features from the YOLO backbone).
   Slower but makes individual tracks longer — see run11.
 
-### Follow-cam (Stage 2.a)
+### Follow-cam (Stage 2.a — parked)
+Design notes kept for the eventual un-park. Output today is jittery /
+mis-framed and not consumable; orchestrator runs only with `--run-p2`.
 - **Focus point = weighted blend of puck position and players centroid**.
   Puck gets high weight when detected; players-centroid fallback otherwise.
   Recently-seen puck positions are extrapolated for ~15 frames to bridge
@@ -327,7 +342,7 @@ models/                    — model weights (gitignored). Ultralytics YOLOs,
 videos/                    — source clips (gitignored)
 runs/                      — pipeline outputs per run (gitignored)
 data/                      — license-clean datasets (committed). Today:
-                              data/jersey_numbers/ (3528 crops + annotations
+                              data/jersey_numbers/ (5197 crops + annotations
                               + train/val/test splits + LICENSE/README).
 tools/                     — utilities (annotation web UI, dataset/splits
                               builders, fine-tune script, smoke tests).
@@ -379,6 +394,19 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
+- **run23** — extends the RILH jersey dataset with **Video 06 (Grenoble vs
+  Varces)** and **Video 07 (Garges vs Rouen)**. New `--frame-stride 10`
+  flag on Stage 1.c densifies sampling for dataset use (uniform temporal
+  coverage instead of top-N highest-confidence). 1670 new crops →
+  manually reviewed via `tools/annotate_crops.py` → 1669 annotations,
+  fed into the dataset via `tools/build_jersey_dataset.py` (which now
+  defaults to **merge** mode — `--replace` for full rebuild). Total
+  dataset: **5197 crops, 48 unique numbers, 6 videos**. Re-fine-tuned
+  PARSeq Hockey RILH (20 epochs, lr 5e-5, batch 16, best epoch 3). Test
+  exact_match: 0.354 (Koshkina alone) → **0.966 (Koshkina + RILH)** on
+  407 held-out crops (199 pos + 208 X). Annotation typos (XX/XXX → X)
+  normalised pre-split. Phase 2 follow-cam parked in this session
+  (orchestrator opt-in via `--run-p2`).
 - **run22** — first end-to-end run via `src/run_project.py` orchestrator on
   Video 05. Phase 1 → Phase 5 sequenced cleanly (~84 min wall-clock).
   Surfaced + fixed the Stage 1.a/1.e `annotated.mp4` filename collision

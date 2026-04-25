@@ -11,7 +11,7 @@ separate concerns that consume the run folders.
 | # | Phase | In pipeline? | Stages | Status |
 |---|---|---|---|---|
 | **Phase 1** | Detect & track | ✅ yes | a (detect), b (teams), c (numbers), d (entities), e (annotate) | ✅ implemented |
-| **Phase 2** | Virtual follow-cam | ✅ yes | a (followcam) | ✅ implemented |
+| **Phase 2** | Virtual follow-cam | ⏸ off by default (`--run-p2` to opt in) | a (followcam) | ❌ parked — output not usable yet (jittery framing); script still callable standalone |
 | **Phase 3** | Rink calibration | ✅ yes (tolerant of failure) | a (rink keypoints) | ❌ parked — HockeyRink doesn't transfer to roller rinks; needs 200-300 annotated frames |
 | **Phase 4** | Event detection | ✅ yes (stub) | a (events) | ⏳ stub no-op — placeholder for goals / shots / fouls via temporal action models |
 | **Phase 5** | Statistics creation | ✅ yes (stub) | a (stats) | ⏳ stub no-op — placeholder for per-player / per-team aggregation |
@@ -36,7 +36,7 @@ Phase 1 stages (the identification sub-pipeline):
 
 Other phase scripts:
 
-- **`src/p2_a_followcam.py`** — broadcast follow-cam. Reads `p1_a_detections.json`; outputs `followcam.mp4`.
+- **`src/p2_a_followcam.py`** — broadcast follow-cam (parked: output not usable yet, opt-in via `--run-p2` in the orchestrator). Reads `p1_a_detections.json`; outputs `followcam.mp4`.
 - **`src/p3_a_rink.py`** — parked rink-calibration sanity check (kept for future Phase 3 work).
 - **`src/p4_a_events.py`** — STUB. Writes `p4_a_events.json` marker.
 - **`src/p5_a_stats.py`** — STUB. Writes `p5_a_stats.json` marker.
@@ -52,7 +52,7 @@ Configs + tools:
 ```bash
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r docs/requirements.md   # yes, .md — see docs/requirements.md for why
 ```
 
 First run auto-downloads YOLO11 weights (~50 MB) into `models/`. The HockeyAI weights land there too when you pass `--hockey-model`.
@@ -76,14 +76,18 @@ python src/run_project.py videos/match.mp4 --output runs/run23 \
 # Skip a phase entirely:
 python src/run_project.py videos/match.mp4 --output runs/run23 --skip-p3 --skip-p4
 
+# Opt in to a parked phase (Phase 2 follow-cam is off by default):
+python src/run_project.py videos/match.mp4 --output runs/run23 --run-p2
+
 # Force re-run all stages even if their outputs already exist:
 python src/run_project.py videos/match.mp4 --output runs/run23 --force
 ```
 
-By default each phase is ON; each stage is skipped if its output file
-exists (incremental re-runs cost nothing). The orchestrator forwards
-backend / model flags to the relevant stage; everything else uses the
-stage script's own default.
+By default Phase 1, 3, 4, 5 are ON and Phase 2 is OFF (parked: the
+follow-cam output isn't usable yet). Each stage is skipped if its output
+file exists (incremental re-runs cost nothing). The orchestrator
+forwards backend / model flags to the relevant stage; everything else
+uses the stage script's own default.
 
 The sections below document each stage script for direct standalone use.
 
@@ -142,7 +146,7 @@ Without `--parseq-checkpoint`, the default is baudm/parseq pretrained on
 generic STR (much weaker on jersey numbers). The checkpoint
 `models/parseq_hockey_rilh.pt` is produced by
 `tools/finetune_parseq_hockey.py` from Maria Koshkina's hockey baseline
-+ our 1063 manually-annotated RILH crops.
++ our 2078 manually-annotated RILH crops (across 6 videos, 48 unique numbers).
 
 Tunables: `--samples-per-track` (default 15), `--ocr-min-conf`
 (default 0.30), `--pose-model`, `--debug-crops-dir`.
@@ -180,7 +184,11 @@ Final MP4 with team-coloured boxes, `t{id} {G|S} #NN` per-track labels
 (track id always shown), gray puck box, short traces. Pass
 `--debug-frames-dir` to also dump 1 frame every N for visual review.
 
-### Phase 2 — stage a — Virtual follow-cam
+### Phase 2 — stage a — Virtual follow-cam (parked)
+
+> ⏸ Parked: the current cinematography output is jittery / mis-framed and
+> not usable. The orchestrator skips Phase 2 by default — pass `--run-p2`
+> to opt in. The standalone script still runs for direct iteration.
 
 ```bash
 python src/p2_a_followcam.py runs/match01/p1_a_detections.json path/to/match.mp4 \

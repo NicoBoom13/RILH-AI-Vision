@@ -29,7 +29,7 @@ from pathlib import Path
 
 SOURCE = Path("runs/run19")
 DEST = Path("data/jersey_numbers")
-VIDEOS = ["clip60", "clip60-2", "video04", "video05"]
+VIDEOS = ["clip60", "clip60-2", "video04", "video05", "video06", "video07"]
 
 
 README = """\
@@ -107,6 +107,13 @@ def main():
                    help="runs/<test>/ root containing <video>/debug_crops/numbers/")
     p.add_argument("--dest", default=str(DEST),
                    help="Destination root for the consolidated dataset.")
+    p.add_argument("--replace", action="store_true",
+                   help="Overwrite the destination annotations.json instead of "
+                        "merging the new entries on top. Default is merge: "
+                        "annotations from previous --source runs are preserved "
+                        "and only new <video>/<file> paths are added (existing "
+                        "labels for the same path are overwritten by the new "
+                        "source's value).")
     args = p.parse_args()
 
     src = Path(args.source).resolve()
@@ -162,35 +169,59 @@ def main():
         x = per_video_labels[v]["X"]
         print(f"  {v:<10} : {ct:>5} crops ({wn} numbers, {x} X)")
 
-    n_with_num = sum(p["with_number"] for p in per_video_labels.values())
-    n_x = sum(p["X"] for p in per_video_labels.values())
+    # Merge with any existing dataset annotations (default behaviour).
+    # `--replace` keeps the old "wipe and rewrite" semantics for full rebuilds.
+    existing_ann = {}
+    existing_ann_path = dest / "annotations.json"
+    if not args.replace and existing_ann_path.exists():
+        existing_ann = json.loads(existing_ann_path.read_text()).get("annotations", {})
+    merged = {**existing_ann, **remapped}
+    n_added_from_source = len(remapped)
+    n_kept_from_existing = len(existing_ann) - len(set(existing_ann) & set(remapped))
+    n_total_after_merge = len(merged)
+
+    n_with_num = sum(1 for v in merged.values() if v != "X")
+    n_x = sum(1 for v in merged.values() if v == "X")
+    per_video_total = {}
+    for path in merged:
+        v = Path(path).parts[1] if len(Path(path).parts) >= 2 else "?"
+        per_video_total[v] = per_video_total.get(v, 0) + 1
 
     metadata = {
-        "n_total": n_copied,
+        "n_total": n_total_after_merge,
         "n_with_number": n_with_num,
         "n_no_number_X": n_x,
+        "n_added_from_source": n_added_from_source,
+        "n_kept_from_existing": n_kept_from_existing,
         "n_missing_in_source": n_missing,
-        "n_unique_numbers": len({lbl for lbl in remapped.values() if lbl != "X"}),
-        "per_video": per_video_counts,
+        "n_unique_numbers": len({lbl for lbl in merged.values() if lbl != "X"}),
+        "per_video": per_video_total,
         "produced_by": "tools/build_jersey_dataset.py",
         "source_run": str(src),
+        "merge_mode": "replace" if args.replace else "merge",
     }
 
     if args.dry_run:
         print(f"\n--dry-run, not writing. Would have copied {n_copied} files.")
+        print(f"Merge: existing={len(existing_ann)}, source={len(remapped)}, "
+              f"final={n_total_after_merge}")
         print(f"Metadata that would be written:")
         print(json.dumps(metadata, indent=2))
         return
 
     dest.mkdir(parents=True, exist_ok=True)
     (dest / "annotations.json").write_text(json.dumps(
-        {"annotations": remapped, "metadata": metadata},
+        {"annotations": merged, "metadata": metadata},
         indent=2, sort_keys=True,
     ))
     (dest / "README.md").write_text(README)
     (dest / "LICENSE.md").write_text(LICENSE_PLACEHOLDER)
 
-    print(f"\n✓ Wrote {n_copied} crops + annotations.json + README.md + LICENSE.md")
+    print(f"\n✓ Wrote {n_copied} crops from source. annotations.json now has "
+          f"{n_total_after_merge} entries "
+          f"({n_added_from_source} from this source + "
+          f"{n_kept_from_existing} kept from existing) "
+          f"[mode={'replace' if args.replace else 'merge'}]")
     print(f"  → {dest}")
     if n_missing:
         print(f"  ({n_missing} annotated entries had no matching crop file)")

@@ -312,6 +312,18 @@ def pick_samples(by_tid, top_n):
     return samples
 
 
+def pick_uniform_samples(by_tid, stride):
+    """For each track, keep every detection landing on a frame index that
+    is a multiple of ``stride``. Used for dataset extraction (uniform
+    temporal coverage) rather than inference (top-N highest-conf). Returned
+    in frame order so the streamed video read stays linear."""
+    samples = {}
+    for tid, dets in by_tid.items():
+        kept = [d for d in dets if d["frame"] % stride == 0]
+        samples[tid] = sorted(kept, key=lambda d: d["frame"])
+    return samples
+
+
 def stream_needed_frames(video_path, indices):
     """Yield (frame_index, BGR frame) for the requested indices via a
     single linear pass through the video (much faster than seeking)."""
@@ -393,6 +405,7 @@ def run(
     ocr_batch_size: int,
     debug_crops_dir: Path | None = None,
     parseq_checkpoint: Path | None = None,
+    frame_stride: int | None = None,
 ):
     """Run the full per-track jersey-number identification pipeline.
 
@@ -409,7 +422,11 @@ def run(
     by_tid = group_detections_by_track(detections_data)
     print(f"Player tracks: {len(by_tid)}")
 
-    samples = pick_samples(by_tid, samples_per_track)
+    if frame_stride is not None:
+        samples = pick_uniform_samples(by_tid, frame_stride)
+        print(f"Sampling: every {frame_stride}th frame (dataset mode)")
+    else:
+        samples = pick_samples(by_tid, samples_per_track)
     frame_work = defaultdict(list)  # frame_idx -> [(tid, xyxy)]
     for tid, dets in samples.items():
         for d in dets:
@@ -598,6 +615,14 @@ def main():
                         "yolo26l-pose.pt (YOLO26 large pose, ~55MB, newer "
                         "architecture). Auto-downloaded into models/.")
     p.add_argument("--samples-per-track", type=int, default=15)
+    p.add_argument("--frame-stride", type=int, default=None,
+                   help="Dataset-extraction mode: take EVERY player detection "
+                        "on frames where frame_index %% N == 0, instead of the "
+                        "default top-N highest-confidence per track. Use with "
+                        "--debug-crops-dir to densely populate a manual-"
+                        "annotation pool for fine-tuning. Voting + the "
+                        "p1_c_numbers.json output still work but are not the "
+                        "primary purpose of this mode.")
     p.add_argument("--ocr-min-conf", type=float, default=0.30,
                    help="Per-sample minimum OCR confidence to count toward "
                         "the per-track vote.")
@@ -628,6 +653,7 @@ def main():
         args.pose_imgsz, args.ocr_batch,
         debug_crops_dir=debug_dir,
         parseq_checkpoint=parseq_ckpt,
+        frame_stride=args.frame_stride,
     )
 
 
