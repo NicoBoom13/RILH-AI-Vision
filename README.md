@@ -99,7 +99,7 @@ python src/p1_a_detect.py path/to/match.mp4 --output runs/match01
 
 Outputs:
 - `runs/match01/annotated.mp4` — original video with bounding boxes, IDs, traces
-- `runs/match01/detections.json` — per-frame detections, consumed by every downstream stage
+- `runs/match01/p1_a_detections.json` — per-frame detections, consumed by every downstream stage
 
 Useful flags:
 - `--hockey-model` — HockeyAI (YOLOv8m fine-tuned on ice hockey) instead of COCO. Auto-downloads to `models/`. Strongly recommended for anything beyond toy clips.
@@ -111,9 +111,9 @@ Useful flags:
 ### Phase 1 — stage b — Teams
 
 ```bash
-python src/p1_b_teams.py runs/match01/detections.json path/to/match.mp4 \
+python src/p1_b_teams.py runs/match01/p1_a_detections.json path/to/match.mp4 \
   --pose-model yolo26l-pose.pt
-# writes runs/match01/teams.json + runs/match01/teams_preview.png
+# writes runs/match01/p1_b_teams.json + runs/match01/teams_preview.png
 ```
 
 Pipeline: YOLO pose → pose-guided torso crop → multi-point dominant color
@@ -128,10 +128,10 @@ Tunables: `--space {hsv,bgr}`, `--grid RxC` (default `3x2`),
 
 ```bash
 # Use the RILH-fine-tuned PARSeq Hockey checkpoint (recommended)
-python src/p1_c_numbers.py runs/match01/detections.json path/to/match.mp4 \
+python src/p1_c_numbers.py runs/match01/p1_a_detections.json path/to/match.mp4 \
   --pose-model yolo26l-pose.pt \
   --parseq-checkpoint models/parseq_hockey_rilh.pt
-# writes runs/match01/numbers.json
+# writes runs/match01/p1_c_numbers.json
 ```
 
 Pipeline: YOLO pose → keep back-facing samples → **Koshkina-style dorsal
@@ -151,11 +151,11 @@ Tunables: `--samples-per-track` (default 15), `--ocr-min-conf`
 
 ```bash
 python src/p1_d_entities.py \
-  runs/match01/detections.json \
-  runs/match01/teams.json \
-  runs/match01/numbers.json \
+  runs/match01/p1_a_detections.json \
+  runs/match01/p1_b_teams.json \
+  runs/match01/p1_c_numbers.json \
   path/to/match.mp4
-# writes runs/match01/entities.json
+# writes runs/match01/p1_d_entities.json
 ```
 
 Collapses fragmented stage-a tracks into stable entities. Strategy: per-track
@@ -169,8 +169,8 @@ On our 60 s test videos, ~200–400 stage-a tracks collapse to ~20–40 entities
 
 ```bash
 python src/p1_e_annotate.py \
-  runs/match01/detections.json \
-  runs/match01/numbers.json \
+  runs/match01/p1_a_detections.json \
+  runs/match01/p1_c_numbers.json \
   path/to/match.mp4 \
   --output runs/match01/annotated.mp4
 # auto-discovers p1_b_teams.json + p1_d_entities.json next to p1_a_detections.json if present
@@ -183,7 +183,7 @@ Final MP4 with team-coloured boxes, `t{id} {G|S} #NN` per-track labels
 ### Phase 2 — stage a — Virtual follow-cam
 
 ```bash
-python src/p2_a_followcam.py runs/match01/detections.json path/to/match.mp4 \
+python src/p2_a_followcam.py runs/match01/p1_a_detections.json path/to/match.mp4 \
   --output runs/match01/followcam.mp4 \
   --zoom 2.0 \
   --alpha 0.08 \
