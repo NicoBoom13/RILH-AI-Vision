@@ -1,8 +1,17 @@
 """
-Throwaway — sanity-check HockeyRink.pt transfer from ice to roller inline hockey.
+RILH-AI-Vision — stage_g_rink (PARKED)
+HockeyRink keypoint-detector transfer sanity check.
 
-Samples N evenly-spaced frames from a clip, runs HockeyRink inference, overlays
-the detected keypoints with their native index + confidence, saves PNGs.
+Samples N evenly-spaced frames from a clip, runs HockeyRink inference,
+overlays the detected keypoints with their native index + confidence,
+saves PNGs. Used to confirm that HockeyRink (trained on ice rinks)
+does NOT transfer cleanly to roller rinks — the model recognises 'a
+rink' but collapses all 56 keypoints into a small cluster instead of
+localising them. See CLAUDE.md tests run05–run07.
+
+Kept as the future starting point for Phase 3 (rink calibration +
+homography), which will need 200–300 annotated roller-rink frames
+to fine-tune HockeyRink properly.
 """
 
 import argparse
@@ -21,6 +30,7 @@ HOCKEYRINK_PATH = MODELS_DIR / "HockeyRink.pt"
 
 
 def ensure_hockeyrink() -> Path:
+    """Lazily download the HockeyRink keypoint weights into ``models/``."""
     if HOCKEYRINK_PATH.exists():
         return HOCKEYRINK_PATH
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -30,6 +40,9 @@ def ensure_hockeyrink() -> Path:
 
 
 def sample_frames(video_path: Path, n: int):
+    """Pick ``n`` evenly-spaced frames from the video, skipping the very
+    first and last. Returns ``(frames, total)`` — frames is a list of
+    ``(index, BGR)`` tuples, total is the source frame count."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -67,6 +80,11 @@ def overlay_keypoints(frame, kp_xy, kp_conf, min_conf=0.3):
 
 
 def main():
+    """CLI entry point — sanity-check whether HockeyRink (an ice-hockey
+    keypoint detector) transfers to the input roller-rink video.
+    Currently parked: the transfer doesn't work cleanly (see test05–07
+    in CLAUDE.md). Kept as a starting point for the future Phase 3
+    rink-calibration work."""
     p = argparse.ArgumentParser(description="HockeyRink transfer sanity check")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default="runs/test05")

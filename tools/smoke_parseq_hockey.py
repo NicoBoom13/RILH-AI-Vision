@@ -126,6 +126,8 @@ def predict_batch(model, device, bgr_crops, letterbox: bool = False):
 
 
 def main():
+    """Load Koshkina's PARSeq Hockey checkpoint, predict on N random
+    user-annotated crops, print a truth-vs-prediction table."""
     device = "mps" if torch.backends.mps.is_available() else "cpu"
     print(f"Device: {device}")
 

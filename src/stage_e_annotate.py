@@ -73,6 +73,9 @@ def dominant_bgr(bgr_crop):
 
 
 def sample_track_colors(tracks_data, video_path, max_samples=6):
+    """Per-track jersey color (used as a fallback when teams.json is
+    missing). Samples ``max_samples`` highest-conf detections per track,
+    crops the upper-chest, returns the median dominant BGR per track."""
     by_tid = defaultdict(list)
     for fr in tracks_data["frames"]:
         fi = fr["frame"]
@@ -131,6 +134,8 @@ def cluster_teams(colors_by_tid):
 # --- Rendering ----------------------------------------------------------------
 
 def build_detections(boxes):
+    """Convert a list of ``{xyxy, class_id, track_id, conf}`` dicts into
+    a supervision.Detections object that the BoxAnnotator can consume."""
     if not boxes:
         return sv.Detections.empty()
     xyxy = np.array([b["xyxy"] for b in boxes], dtype=np.float32)
@@ -178,6 +183,9 @@ def render(detections_data, numbers, team_of, video_path, output,
     frames_map = {fr["frame"]: fr["boxes"] for fr in detections_data["frames"]}
 
     def team_for(tid_i):
+        """Resolve a track id to its team. Prefer the entity-level
+        team_id (stage_d) when available; otherwise fall back to the
+        per-track team from stage_b."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -187,6 +195,8 @@ def render(detections_data, numbers, team_of, video_path, output,
         return team_of.get(tid_i, 0)
 
     def jersey_for(tid_i):
+        """Resolve a track id to its jersey number, preferring the
+        entity-level value (stage_d) when present."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -195,6 +205,8 @@ def render(detections_data, numbers, team_of, video_path, output,
         return info.get("jersey_number") if info else None
 
     def goalie_for(tid_i):
+        """Resolve a track id to its is_goaltender flag, preferring the
+        entity-level value (stage_d) when present."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -271,6 +283,7 @@ def render(detections_data, numbers, team_of, video_path, output,
 
 
 def main():
+    """CLI entry point — parse arguments and dispatch to ``render``."""
     p = argparse.ArgumentParser(
         description="Annotate video: t{id} {G|S} #NN labels + team-coloured boxes"
     )

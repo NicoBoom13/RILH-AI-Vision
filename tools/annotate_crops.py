@@ -183,7 +183,15 @@ FNAME_RE = re.compile(r"t(\d+)_f(\d+)_(num|nam)-([^_]+)_c(\d+)\.png")
 
 
 class State:
+    """Server-side state shared across HTTP requests.
+
+    Holds the annotation dict (path → label) and persists it to disk
+    atomically on every change. List of crops is built once on first
+    request and cached (label values are refreshed from the current
+    annotations dict on subsequent calls)."""
+
     def __init__(self, root: Path, output: Path):
+        """Initialise from disk if ``output`` already contains annotations."""
         self.root = root
         self.output = output
         self.lock = threading.Lock()
@@ -194,6 +202,7 @@ class State:
         self._items_cache = None
 
     def save(self):
+        """Atomically persist the annotations dict to disk."""
         with self.lock:
             tmp = self.output.with_suffix(".json.tmp")
             tmp.write_text(json.dumps(
@@ -201,8 +210,9 @@ class State:
             tmp.replace(self.output)
 
     def list_crops(self):
+        """Return the list of crop entries (path, OCR hint, current label)."""
         if self._items_cache is not None:
-            # Refresh labels from current annotations
+            # Cache hit — refresh the dynamic label field from current annotations.
             for it in self._items_cache:
                 it["label"] = self.annotations.get(it["path"], "")
             return self._items_cache
@@ -222,15 +232,22 @@ class State:
         return items
 
     def annotate(self, path: str, label: str):
+        """Record one annotation and persist immediately."""
         with self.lock:
             self.annotations[path] = label
         self.save()
 
 
 class Handler(BaseHTTPRequestHandler):
+    """HTTP request handler exposing the crop list, the crop bytes,
+    and the annotate endpoint. The shared State is set on the class
+    before the server starts."""
+
     state = None  # set externally before starting the server
 
     def do_GET(self):
+        """GET / serves the HTML UI; /api/list returns the crop catalogue;
+        /crop/<rel> serves a crop PNG (with a path-traversal guard)."""
         url = urlparse(self.path)
         if url.path == "/":
             body = HTML.encode("utf-8")
@@ -268,6 +285,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def do_POST(self):
+        """POST /api/annotate persists one (path, label) pair."""
         if self.path == "/api/annotate":
             length = int(self.headers.get("Content-Length", 0))
             data = json.loads(self.rfile.read(length))
@@ -278,10 +296,12 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def log_message(self, format, *args):
-        pass  # quiet
+        """Suppress the default per-request stderr log line."""
+        pass
 
 
 def main():
+    """CLI entry point — parse arguments and start the localhost server."""
     p = argparse.ArgumentParser(description="Manual jersey-number annotation")
     p.add_argument("root", type=str,
                    help="Root dir containing <video>/debug_crops/numbers/*.png "

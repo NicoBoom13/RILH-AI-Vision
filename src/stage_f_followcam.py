@@ -39,6 +39,7 @@ def compute_focus_point(boxes, last_puck, puck_age, players_fallback,
     player_pts = [b for b in boxes if b["class_id"] == PERSON_CLASS]
 
     def center(b):
+        """Return the bbox centroid as a numpy 2-vector."""
         x1, y1, x2, y2 = b["xyxy"]
         return np.array([(x1 + x2) / 2.0, (y1 + y2) / 2.0])
 
@@ -105,6 +106,8 @@ def boxcar_smooth(points, window):
 
 
 def get_crop_window(focus, frame_w, frame_h, crop_w, crop_h):
+    """Return the (x1, y1, x2, y2) crop centred on ``focus`` and clamped
+    to the frame bounds — never produces black bars at the edges."""
     cx, cy = focus
     x1 = int(round(cx - crop_w / 2))
     y1 = int(round(cy - crop_h / 2))
@@ -116,6 +119,12 @@ def get_crop_window(focus, frame_w, frame_h, crop_w, crop_h):
 def run(tracks_path: Path, video_path: Path, output_path: Path,
         zoom: float, alpha: float, puck_weight: float,
         polish_window: int, debug_overlay: bool):
+    """Render a virtual broadcast follow-cam from detections.json.
+
+    Computes a focus point per frame as a weighted blend of the puck
+    position and the players' centroid, smooths the trajectory with
+    EMA + an optional centred boxcar pass, then crops a fixed-aspect
+    window centred on that focus and writes it to ``output_path``."""
     with open(tracks_path) as f:
         data = json.load(f)
 
@@ -204,8 +213,9 @@ def run(tracks_path: Path, video_path: Path, output_path: Path,
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RILH-AI-Vision — Phase 2: virtual follow-cam")
-    parser.add_argument("tracks", type=str, help="Path to tracks.json from phase 1")
+    """CLI entry point — parse arguments and dispatch to ``run``."""
+    parser = argparse.ArgumentParser(description="RILH-AI-Vision — stage_f_followcam : virtual follow-cam")
+    parser.add_argument("tracks", type=str, help="Path to detections.json from stage_a")
     parser.add_argument("video", type=str, help="Path to original video")
     parser.add_argument("--output", type=str, default="runs/latest/followcam.mp4")
     parser.add_argument("--zoom", type=float, default=2.0,

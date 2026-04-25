@@ -36,6 +36,7 @@ RARE_LABEL_MIN = 10                # below this, send all to train
 
 
 def main():
+    """CLI entry point — produce stratified train/val/test JSON splits."""
     p = argparse.ArgumentParser(description="Build train/val/test splits")
     p.add_argument("--dataset", default=str(DEFAULT_DATASET))
     p.add_argument("--seed", type=int, default=42)

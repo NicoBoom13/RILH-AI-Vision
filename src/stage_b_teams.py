@@ -47,6 +47,7 @@ MODELS_DIR = Path("models")
 
 
 def pick_device():
+    """Return the best PyTorch device available (mps > cuda > cpu)."""
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -55,6 +56,9 @@ def pick_device():
 
 
 def resolve_yolo_path(name: str) -> Path:
+    """Route a bare YOLO filename (e.g. ``yolo11n-pose.pt``) into the
+    project ``models/`` folder so Ultralytics auto-downloads land there
+    instead of CWD. Paths with a directory component are kept as-is."""
     p = Path(name)
     if len(p.parts) == 1:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -63,6 +67,8 @@ def resolve_yolo_path(name: str) -> Path:
 
 
 def safe_crop(frame, xyxy):
+    """Clamp xyxy to the frame and return the BGR sub-image, or None
+    if the resulting region is too small (≤ 4 px on either dimension)."""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = xyxy
     x1 = max(0, int(x1))
@@ -75,6 +81,7 @@ def safe_crop(frame, xyxy):
 
 
 def ious(xyxy, boxes):
+    """Vectorised IoU between one xyxy box and an (N, 4) array of boxes."""
     bx1 = np.maximum(xyxy[0], boxes[:, 0])
     by1 = np.maximum(xyxy[1], boxes[:, 1])
     bx2 = np.minimum(xyxy[2], boxes[:, 2])
@@ -176,6 +183,8 @@ def multi_point_color(torso_crop, rows=3, cols=2):
 
 
 def group_detections_by_track(tracks_data):
+    """Pivot detections by track id, keeping only PERSON class with a
+    real (non-negative) track id. Returns ``{tid: [(frame, xyxy, conf), ...]}``."""
     by_tid = defaultdict(list)
     for fr in tracks_data["frames"]:
         fi = fr["frame"]
@@ -209,6 +218,9 @@ def goaltender_tids(tracks_data, threshold=0.5):
 
 
 def stream_needed_frames(video_path, indices):
+    """Yield (frame_index, BGR frame) pairs for the requested frame
+    indices, reading the video sequentially (single linear pass — much
+    faster than seeking back and forth)."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -310,6 +322,9 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
 
 
 def _colors_to_space(bgr_list, space):
+    """Convert a list of BGR triplets to a (N, 3) float32 array in either
+    BGR or HSV — used by the k-means step. HSV typically separates
+    teams better when one wears a near-grayscale jersey."""
     bgr = np.array(bgr_list, dtype=np.uint8).reshape(-1, 1, 3)
     if space == "hsv":
         return cv2.cvtColor(bgr, cv2.COLOR_BGR2HSV).reshape(-1, 3).astype(np.float32)
@@ -438,6 +453,13 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
 
 def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         pose_imgsz, preview_cols, space, multi_grid):
+    """Run the team-classification pipeline end-to-end.
+
+    Loads ``detections.json``, samples crops from the source video,
+    extracts dominant torso colors, fits a k=2 k-means on skater-only
+    crops (goalies are classified post-hoc against those centroids),
+    and writes ``teams.json`` plus a debug ``teams_preview.png``.
+    """
     device = pick_device()
     print(f"Device: {device}")
 
@@ -532,6 +554,7 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
 
 
 def main():
+    """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
         description="RILH-AI-Vision — stage_b_teams (pose torso + multi-point "
                     "+ per-crop vote)"

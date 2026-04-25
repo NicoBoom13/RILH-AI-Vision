@@ -66,6 +66,11 @@ HOCKEY_CLASS_MAP = {
 
 
 def ensure_hockey_model() -> Path:
+    """Lazily download the HockeyAI weights into ``models/`` if missing.
+
+    Returns:
+        Path to the local checkpoint, ready to be passed to YOLO().
+    """
     if HOCKEY_MODEL_PATH.exists():
         return HOCKEY_MODEL_PATH
     HOCKEY_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -86,6 +91,24 @@ def run(
     tracker: str,
     training_mode: bool = False,
 ):
+    """Run YOLO detection + ByteTrack tracking on a video.
+
+    Streams every frame through the model, applies the HockeyAI class
+    remap if requested, drops extra puck detections in match mode, and
+    writes both an annotated MP4 and a per-frame ``detections.json``.
+
+    Args:
+        video_path: Source MP4.
+        output_dir: Where to write annotated.mp4 + detections.json. Created if missing.
+        model_name: YOLO weights path (resolved by ``resolve_model_path``).
+        conf: Detection confidence floor for the YOLO predictor.
+        imgsz: Inference image size; bigger helps small-object recall (puck).
+        hockey_mode: If True use HockeyAI weights + class remap; else COCO.
+        tracker: Tracker config (yaml) — bytetrack.yaml or a path under configs/.
+        training_mode: If True, keep all puck detections per frame
+            (multi-puck drills). If False (default = match mode), keep
+            only the highest-confidence puck per frame.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated.mp4"
     detections_path = output_dir / "detections.json"
@@ -240,7 +263,8 @@ def run(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="RILH-AI-Vision — Phase 1: detect & track")
+    """CLI entry point — parse arguments and dispatch to ``run``."""
+    parser = argparse.ArgumentParser(description="RILH-AI-Vision — stage_a: detect & track")
     parser.add_argument("video", type=str, help="Path to input video")
     parser.add_argument("--output", type=str, default="runs/latest", help="Output directory")
     parser.add_argument("--model", type=str, default="yolo11m.pt",

@@ -52,6 +52,9 @@ class JerseyDataset(Dataset):
 
     def __init__(self, split_json: Path, dataset_root: Path, img_size,
                  augment: bool = False):
+        """Load a split JSON file (list of {path, label}) and prepare
+        the BICUBIC + normalise transform that matches Koshkina's
+        training pipeline (direct stretch resize, no letterbox)."""
         self.entries = json.loads(split_json.read_text())
         self.root = dataset_root
         self.augment = augment
@@ -64,23 +67,25 @@ class JerseyDataset(Dataset):
         ])
 
     def __len__(self):
+        """Number of entries in this split."""
         return len(self.entries)
 
     def __getitem__(self, idx):
+        """Return one (image_tensor, label_string) pair. ``X`` labels
+        are mapped to the empty string so the model learns to predict
+        EOS immediately on unreadable crops."""
         e = self.entries[idx]
         img = Image.open(self.root / e["path"]).convert("RGB")
         if self.augment:
             img = self._augment(img)
         img = self.preprocess(img)
-        # X (no number) → empty target string. The model learns to predict
-        # EOS immediately, suppressing hallucinations on unreadable crops.
         label = "" if e["label"] == "X" else e["label"]
         return img, label
 
     @staticmethod
     def _augment(pil):
-        # Mild augmentation: brightness ±20%, contrast ±20%. No rotation
-        # because jersey numbers are upright in the source frames.
+        """Apply mild brightness / contrast jitter (±20 %). No rotation
+        — jersey numbers are upright in the source frames."""
         from torchvision.transforms.functional import adjust_brightness, adjust_contrast
         import random
         if random.random() < 0.5:
@@ -91,6 +96,8 @@ class JerseyDataset(Dataset):
 
 
 def collate_fn(batch):
+    """Stack image tensors and pass labels through as a list (PARSeq's
+    tokenizer encodes them inside training_step, so they stay strings)."""
     images = torch.stack([b[0] for b in batch])
     labels = [b[1] for b in batch]
     return images, labels
@@ -168,6 +175,10 @@ def evaluate(model: PARSeq, loader: DataLoader, device: str):
 # ----- Train ----------------------------------------------------------------
 
 def train(args):
+    """Run the full fine-tune loop end-to-end: load Koshkina baseline,
+    train on train.json with eval on val.json each epoch, save the
+    best model by val exact-match, then evaluate baseline vs fine-tune
+    on the held-out test set and write the comparison summary."""
     device = "mps" if torch.backends.mps.is_available() else (
         "cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
@@ -308,6 +319,7 @@ def train(args):
 
 
 def main():
+    """CLI entry point — parse arguments and dispatch to ``train``."""
     p = argparse.ArgumentParser(description="Fine-tune PARSeq Hockey on RILH crops")
     p.add_argument("--epochs", type=int, default=20)
     p.add_argument("--batch-size", type=int, default=16)

@@ -44,6 +44,7 @@ MODELS_DIR = Path("models")
 
 
 def pick_device():
+    """Return the best PyTorch device available (mps > cuda > cpu)."""
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -52,6 +53,8 @@ def pick_device():
 
 
 def resolve_yolo_path(name: str) -> Path:
+    """Route a bare YOLO filename into ``models/`` for Ultralytics
+    auto-download. Paths with a directory component are kept as-is."""
     p = Path(name)
     if len(p.parts) == 1:
         MODELS_DIR.mkdir(parents=True, exist_ok=True)
@@ -60,6 +63,8 @@ def resolve_yolo_path(name: str) -> Path:
 
 
 def safe_crop(frame, xyxy):
+    """Clamp xyxy to the frame and return the BGR sub-image, or None
+    if the resulting region is too small (≤ 4 px on either dimension)."""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = xyxy
     x1 = max(0, int(x1))
@@ -72,6 +77,12 @@ def safe_crop(frame, xyxy):
 
 
 def orientation_from_kps(kp_xy, kp_conf, thr=0.3):
+    """Classify body orientation from COCO-17 keypoints.
+
+    Returns one of: 'front' (nose+eyes visible), 'back' (ears visible
+    without nose), 'side' (only shoulders confidently visible), or
+    'unknown' (shoulders missing). Used to gate which samples get the
+    dorsal jersey OCR — only back-facing samples are useful."""
     nose = kp_conf[KP_NOSE] > thr
     eyes = (kp_conf[KP_LEYE] > thr) or (kp_conf[KP_REYE] > thr)
     ears = (kp_conf[KP_LEAR] > thr) or (kp_conf[KP_REAR] > thr)
@@ -123,6 +134,7 @@ def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3, padding_px=5):
 
 
 def ious(xyxy, boxes):
+    """Vectorised IoU between one xyxy box and an (N, 4) array of boxes."""
     bx1 = np.maximum(xyxy[0], boxes[:, 0])
     by1 = np.maximum(xyxy[1], boxes[:, 1])
     bx2 = np.minimum(xyxy[2], boxes[:, 2])
@@ -154,6 +166,14 @@ class ParseqOCR:
     by the caller's `_filter_number`."""
 
     def __init__(self, device, checkpoint_path: Path | None = None):
+        """Build the OCR engine.
+
+        Args:
+            device: torch device string (e.g. 'mps', 'cuda', 'cpu').
+            checkpoint_path: optional path to a custom Lightning .pt
+                checkpoint. None → load baudm/parseq pretrained on STR.
+                Otherwise load the custom weights via ``_load_external_checkpoint``.
+        """
         self.device = device
         self.use_letterbox = True  # baudm default behaviour
         if checkpoint_path is None:
@@ -261,6 +281,9 @@ class ParseqOCR:
 
 
 def group_detections_by_track(tracks_data):
+    """Pivot detections by track id, keeping only PERSON-class entries
+    with a real track id. Each per-track entry preserves frame, xyxy,
+    confidence, and class_name (player vs goaltender)."""
     by_tid = defaultdict(list)
     for fr in tracks_data["frames"]:
         fi = fr["frame"]
@@ -280,6 +303,9 @@ def group_detections_by_track(tracks_data):
 
 
 def pick_samples(by_tid, top_n):
+    """For each track, keep its ``top_n`` highest-confidence detections.
+    Returned in confidence-descending order so the caller can take the
+    first N if it needs even fewer."""
     samples = {}
     for tid, dets in by_tid.items():
         samples[tid] = sorted(dets, key=lambda d: d["conf"], reverse=True)[:top_n]
@@ -287,6 +313,8 @@ def pick_samples(by_tid, top_n):
 
 
 def stream_needed_frames(video_path, indices):
+    """Yield (frame_index, BGR frame) for the requested indices via a
+    single linear pass through the video (much faster than seeking)."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -366,6 +394,14 @@ def run(
     debug_crops_dir: Path | None = None,
     parseq_checkpoint: Path | None = None,
 ):
+    """Run the full per-track jersey-number identification pipeline.
+
+    For each player track in ``detections.json``, sample N high-conf
+    detections, run YOLO pose on those frames, isolate back-facing
+    samples, crop the dorsal jersey region Koshkina-style, OCR with
+    PARSeq, vote per track (≥ 2 agreeing votes required), and write
+    ``numbers.json`` plus an optional debug-crop dump.
+    """
     device = pick_device()
     print(f"Device: {device}")
 
@@ -399,6 +435,9 @@ def run(
     pending_meta = []  # (tid, sample_idx, frame_idx)
 
     def flush_ocr():
+        """Run OCR on the queued crops and dispatch results to
+        ``sample_results`` + the optional debug-crops dump. Called
+        when the queue reaches ``ocr_batch_size`` and once at the end."""
         if not pending_crops:
             return
         results = ocr.read_batch(pending_crops)
@@ -544,6 +583,7 @@ def run(
 
 
 def main():
+    """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
         description="RILH-AI-Vision — stage_c_numbers : per-track jersey OCR"
     )

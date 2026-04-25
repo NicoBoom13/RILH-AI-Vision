@@ -41,6 +41,7 @@ PERSON_CLASS = 0
 
 
 def pick_device():
+    """Return the best PyTorch device available (mps > cuda > cpu)."""
     if torch.backends.mps.is_available():
         return "mps"
     if torch.cuda.is_available():
@@ -49,6 +50,9 @@ def pick_device():
 
 
 def safe_crop(frame, xyxy, min_w=8, min_h=16):
+    """Clamp xyxy to the frame and return the BGR sub-image, or None
+    if the resulting region is below the minimum dimensions for OSNet
+    (8×16 — Re-ID embeddings on tinier crops are noise)."""
     h, w = frame.shape[:2]
     x1, y1, x2, y2 = xyxy
     x1 = max(0, int(x1))
@@ -61,6 +65,8 @@ def safe_crop(frame, xyxy, min_w=8, min_h=16):
 
 
 def stream_needed_frames(video_path, indices):
+    """Yield (frame_index, BGR frame) for the requested indices via a
+    single linear pass through the video (much faster than seeking)."""
     cap = cv2.VideoCapture(str(video_path))
     if not cap.isOpened():
         raise RuntimeError(f"Cannot open {video_path}")
@@ -78,6 +84,8 @@ def stream_needed_frames(video_path, indices):
 
 
 def group_detections_by_track(tracks_data):
+    """Pivot detections by track id, keeping only PERSON class with a
+    real (non-negative) track id. Returns ``{tid: [(frame, xyxy, conf), ...]}``."""
     by_tid = defaultdict(list)
     for fr in tracks_data["frames"]:
         for b in fr["boxes"]:
@@ -116,6 +124,9 @@ def extract_track_embeddings(tracks_data, video_path, extractor,
     pending_tids = []
 
     def flush():
+        """Run OSNet on the queued crops and accumulate per-tid feature
+        vectors. Called when the queue reaches ``batch_size`` and once
+        at the end of the frame stream."""
         if not pending_crops:
             return
         with torch.no_grad():
@@ -227,19 +238,28 @@ def build_edges(embeddings, frame_sets, team_of, is_goalie,
 
 
 class UnionFind:
+    """Disjoint-set forest with path compression for the greedy merge.
+
+    Keys are track ids; each root identifies one entity cluster after
+    merges complete. Path compression keeps lookups near-constant time
+    even on long merge chains."""
+
     def __init__(self, tids):
+        """Initialise each track id as its own singleton cluster."""
         self.parent = {t: t for t in tids}
 
     def find(self, x):
+        """Return the root of x's cluster, compressing the path along the way."""
         r = x
         while self.parent[r] != r:
             r = self.parent[r]
-        # Path compression
+        # Path compression — points every visited node directly at the root.
         while self.parent[x] != r:
             self.parent[x], x = r, self.parent[x]
         return r
 
     def roots(self):
+        """Return the set of cluster roots (one per merged group)."""
         return {self.find(t) for t in self.parent}
 
 
@@ -356,6 +376,8 @@ def verify_invariants(entities, frame_sets, max_overlap_frames):
 
 
 def report(entities, unmatched, team_of, is_goalie):
+    """Print a human-readable summary of the merge result: per-team
+    entity / goalie counts and the top 10 entities by frame coverage."""
     per_team = defaultdict(lambda: {"n": 0, "goalies": 0})
     for e in entities:
         per_team[e["team_id"]]["n"] += 1
@@ -383,6 +405,13 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
         ocr_bonus, ocr_conflict_conf_floor, goalie_bonus,
         team_conf_floor, max_overlap_frames,
         osnet_model):
+    """Run the entity-clustering pipeline end-to-end.
+
+    Loads stage_a/b/c outputs, computes per-track OSNet medoid
+    embeddings, builds a pair-wise merge graph under team / non-overlap
+    / OCR-conflict constraints, runs greedy union-find merging, and
+    writes ``entities.json`` with the resulting clusters.
+    """
     device = pick_device()
     print(f"Device: {device}")
 
@@ -479,6 +508,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
 
 
 def main():
+    """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
         description="RILH-AI-Vision — stage_d_entities : merge tracks into entities"
     )

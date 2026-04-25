@@ -99,6 +99,7 @@ Common options for a small CV dataset:
 
 
 def main():
+    """CLI entry point — copy crops + remap annotations into data/jersey_numbers/."""
     p = argparse.ArgumentParser(description="Build license-clean jersey dataset")
     p.add_argument("--dry-run", action="store_true",
                    help="Don't copy/write anything, just report counts.")
