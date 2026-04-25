@@ -269,10 +269,13 @@ class ParseqOCR:
     @staticmethod
     def _load_external_checkpoint(checkpoint_path: Path):
         """Load a Lightning-format PARSeq checkpoint into the baudm/parseq
-        architecture. Koshkina stores keys without the `model.` prefix
-        that baudm's wrapper module uses, so we remap them. Both projects
-        use the same 95-output (94-char + 1 special) head, so shapes
-        match without any patching."""
+        architecture. Two checkpoint flavours are supported:
+          - Koshkina (vendored fork): keys at top level (`encoder.*`,
+            `head.*`). We add the `model.` prefix to match baudm's
+            wrapper.
+          - Our fine-tuned model (saved through strhub.PARSeq directly):
+            keys ALREADY have the `model.` prefix. We skip the remap.
+        Detection is purely by inspecting the first key."""
         ckpt = torch.load(str(checkpoint_path), map_location="cpu",
                           weights_only=False)
         if "state_dict" not in ckpt:
@@ -282,9 +285,14 @@ class ParseqOCR:
         model = torch.hub.load(
             "baudm/parseq", "parseq", pretrained=False, trust_repo=True
         ).eval()
-        # Prefix every key with `model.` to match baudm's wrapper layout
-        remapped = {f"model.{k}": v for k, v in sd.items()}
-        result = model.load_state_dict(remapped, strict=False)
+        first_key = next(iter(sd.keys()))
+        if first_key.startswith("model."):
+            # Already prefixed (saved through baudm-wrapped PARSeq)
+            sd_to_load = sd
+        else:
+            # Koshkina format — add `model.` prefix
+            sd_to_load = {f"model.{k}": v for k, v in sd.items()}
+        result = model.load_state_dict(sd_to_load, strict=False)
         if result.missing_keys or result.unexpected_keys:
             print(f"  load report: {len(result.missing_keys)} missing, "
                   f"{len(result.unexpected_keys)} unexpected")
@@ -293,7 +301,7 @@ class ParseqOCR:
             if result.unexpected_keys:
                 print(f"  unexpected[:3]: {result.unexpected_keys[:3]}")
         else:
-            print(f"  ✓ all {len(remapped)} weights loaded cleanly")
+            print(f"  ✓ all {len(sd_to_load)} weights loaded cleanly")
         return model
 
     @staticmethod

@@ -21,3 +21,6 @@ videos/
 .vscode/
 .idea/
 .DS_Store
+
+# Graphify visualization output (regeneratable via regen.py, kept local-only)
+graphify-out/

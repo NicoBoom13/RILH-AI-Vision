@@ -37,17 +37,25 @@ analytics. Built from open-source modules + custom code only.
   downstream by `phase6_annotate.py`. On test12 (250 tracks → 40 entities),
   on test13 (167 tracks → 24 entities). Doesn't replace the tracker — it
   post-processes its output. Design doc: `docs/phase_1_6_design.md`.
-- **Phase 6** 🟡 partially implemented: jersey-number OCR on dorsal crops.
-  Two OCR engines plumbed in — PARSeq (default, fast, via torch.hub) and
-  Microsoft TrOCR (`--ocr-engine trocr`, heavier ~340 MB, ~2× recall on
-  difficult video). Crop is a **tight horizontal band of the back** with
-  **letterbox padding to PARSeq's 4:1 aspect** (added after observing that
-  stretched-square crops confuse digit recognition). On `test08` (old
-  crop): 52/433 tracks identified (12%), 11 player groups. On `test13`
-  (new crop + TrOCR): 39/167 (23%), 10 player groups. **Upstream blocker
-  (fragmentation) is partly addressed by Phase 1.6**, but OCR itself
-  caps out on small / motion-blurred / oblique-angle jersey numbers —
-  video quality is the bottleneck after ~test13.
+- **Phase 6** ✅ jersey-number OCR via **PARSeq Hockey + RILH fine-tune**.
+  Three OCR engines plumbed in — PARSeq (`--ocr-engine parseq`, default),
+  Microsoft TrOCR (`--ocr-engine trocr`), and PARSeq+TrOCR vote
+  (`--ocr-engine together`). The PARSeq engine accepts a custom
+  `--parseq-checkpoint` to load Maria Koshkina's hockey-fine-tuned PARSeq
+  ([github.com/mkoshkina/jersey-number-pipeline](https://github.com/mkoshkina/jersey-number-pipeline),
+  CC-BY-NC license) and our own further fine-tuned `parseq_hockey_rilh.pt`
+  trained on 1063 manually-annotated RILH crops. **Crop strategy**
+  rewritten Koshkina-style: bbox of 4 torso keypoints + 5 px padding
+  (full shoulder→hip span, not the previous tight band). When loading a
+  custom checkpoint, the letterbox is skipped (Koshkina trained on
+  direct-resize). **Quality on held-out test set (208 crops): exact-
+  match 43.3 % (Koshkina alone) → 97.1 % (Koshkina + RILH fine-tune)**.
+  On Video 04+05 truth tracks: recall 17–29 % (TrOCR) → 55–58 %
+  (Koshkina) → **81–84 %** (Koshkina + RILH); precision 40–53 % →
+  63–68 % → **95–96 %**. Receipt hallucinations (`CASHIER` / `AMOUNT`
+  / `TAX` / etc. that TrOCR produced) are gone. Names are not yet
+  identified — PARSeq Hockey is digit-only; a name fine-tune is a
+  separate next step.
 
 ## Architecture
 Multi-pass pipeline:
@@ -128,25 +136,37 @@ inference tractable):
    `models/` on first use.
 3. Classify **orientation** from pose keypoints (nose + eyes → front;
    ears without nose → back; shoulders only → side).
-4. On back-facing samples, crop a **tight horizontal band** of the back
-   (15–65 % of shoulder→hip height, shoulder width + 30 % pad). This is
-   narrower than the full torso but matches the region where the jersey
-   number actually sits.
-5. **Letterbox-pad** the crop to the OCR engine's expected aspect (1:4 h:w
-   for PARSeq's 32×128) before inference — avoids horizontal stretching
-   of digits that used to cause 6↔7 and 0↔6 confusions.
-6. Run OCR (`--ocr-engine {parseq,trocr,together}`):
-   - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`)
+4. On back-facing samples, crop the dorsal region **Koshkina-style** (since
+   test19/20/21 — replaces the previous tight 15-65 % band): bbox of the
+   four torso keypoints (LSHO, RSHO, LHIP, RHIP) plus 5 px padding on
+   `x_min`, `x_max`, and `y_min` (no padding on `y_max` so the crop ends
+   cleanly at the hips). This produces ~square crops covering the full
+   shoulder→hip torso, **2× taller** than the old band. Matches the
+   distribution Koshkina trained on, so off-the-shelf inference no
+   longer faces a distribution shift.
+5. **Letterbox-pad** the crop to PARSeq's 32×128 (1:4 h:w) before
+   inference — used by the default baudm/parseq pretrained engine. When
+   loading a custom checkpoint via `--parseq-checkpoint` (e.g.
+   `models/parseq_hockey.pt` or `parseq_hockey_rilh.pt`), the letterbox
+   is **disabled**: Koshkina trained with direct stretch resize and her
+   model expects horizontally-stretched digits (skipping the letterbox
+   was the difference between 20 % and 80 % exact-match in the test19
+   smoke test).
+6. Run OCR (`--ocr-engine {parseq,trocr,together}`, plus optional
+   `--parseq-checkpoint <path>`):
+   - **PARSeq** (default, via `torch.hub`, `pytorch_lightning`+`timm`+`nltk`).
+     Accepts `--parseq-checkpoint` to load a custom Lightning checkpoint;
+     loader auto-detects whether keys carry the `model.` wrapper prefix
+     (Koshkina's vendored fork doesn't, our fine-tuned checkpoint does).
    - **TrOCR** (`microsoft/trocr-base-printed`, via `transformers`+
      `sentencepiece`): heavier (~340 MB) but ~2× recall on difficult text.
+     **Still useful for player NAME OCR** (PARSeq Hockey is digit-only).
    - **Together** (PARSeq + TrOCR, confidence-weighted vote): both engines
      run on every crop; outputs combined per-crop with `_filter_*`
      applied per side, then: agree → bonus +0.10, solo → ×0.7 penalty,
-     conflict → reject. Different training sets (PARSeq = scene text,
-     TrOCR = printed receipts) produce different failure modes, so
-     model-specific hallucinations (TrOCR's `CASHIER`/`AMOUNT`/`TAX` on
-     noisy crops) are caught when PARSeq doesn't echo them. Cost: ~2×
-     inference and ~390 MB GPU memory.
+     conflict → reject. Was useful when both engines had complementary
+     biases on generic crops; now superseded by `parseq_hockey_rilh.pt`
+     for digits, but kept available.
 7. Keep digits only, 1–2 chars. **Vote** per track; the jersey number is
    the majority winner.
 8. **Merge** tracks that share the same confident number and don't overlap
@@ -203,11 +223,12 @@ Annotation (`phase6_annotate.py`):
   bystanders that HockeyAI tags as players.
 
 ## Known limitations (in priority order)
-1. **Video source quality is the current bottleneck** (post test13). Torso
-   crops of 30–50 px with motion blur and oblique angles defeat even TrOCR;
-   team colour clustering margin drops when jerseys aren't sharply contrasted.
-   No algorithmic fix short of fine-tuning — needs better input footage
-   (stable camera, good lighting, close distance, high contrast jerseys).
+1. **Video source quality** still affects team-colour clustering and
+   any per-frame analysis on small / blurry / oblique players. Number
+   OCR is no longer the bottleneck (post test21: 95-96 % precision,
+   81-84 % recall on truth tracks via PARSeq Hockey + RILH fine-tune).
+   The remaining ~15-20 % missed numbers are mostly tracks where the
+   back is never cleanly visible.
 2. **Track fragmentation** is real but **partly absorbed** by Phase 1.6
    (test16: 435 tracks → 37 entities, of which only 5 G after the
    goalie majority + frame-coverage rules). HockeyAI still
@@ -244,11 +265,117 @@ Annotation (`phase6_annotate.py`):
   stay available for comparison.
 - Don't commit videos (`videos/`) or model weights (`*.pt`)
 
+## Repo layout
+```
+src/                — pipeline phases (phase1_detect_track, phase1_5_teams,
+                       phase1_6_entities, phase2_followcam, phase3_transfer_test,
+                       phase6_identify, phase6_annotate)
+configs/            — tracker YAMLs (bytetrack_tuned, botsort_reid)
+docs/               — design notes (phase_1_6_design.md)
+models/             — model weights (gitignored). Includes Ultralytics
+                       YOLOs, HockeyAI, parseq_hockey.pt (Koshkina),
+                       parseq_hockey_rilh.pt (our fine-tune).
+videos/             — source clips (gitignored)
+runs/               — pipeline outputs per test (gitignored)
+data/               — license-clean datasets (committed). Today:
+                       data/jersey_numbers/ (3528 crops + annotations
+                       + train/val/test splits + LICENSE/README).
+tools/              — utilities, kept separate from src/ (not pipeline phases)
+graphify-out/       — local 3D visualization of the pipeline (gitignored,
+                       see "Visualization" section)
+```
+
+## Tools (`tools/`)
+- `tools/annotate_crops.py` — localhost web UI for manually labeling
+  jersey crops. Pre-fills each crop's input with the OCR engine's
+  filename hint, saves incrementally, resumes at first un-annotated.
+  Used to produce `data/jersey_numbers/annotations.json`.
+- `tools/build_jersey_dataset.py` — consolidates the runs-based crops
+  into the portable `data/jersey_numbers/` dataset.
+- `tools/build_jersey_splits.py` — stratified 80/10/10 train/val/test
+  splits with X-negatives subsampled to balance positives.
+- `tools/finetune_parseq_hockey.py` — minimal PyTorch loop fine-tuning
+  Koshkina's PARSeq Hockey on the user's RILH crops. Outputs
+  `models/parseq_hockey_rilh.pt`. Self-evaluates baseline vs fine-tuned
+  on the held-out test set.
+- `tools/smoke_parseq_hockey.py` — standalone smoke test that loads the
+  Koshkina checkpoint into baudm/parseq architecture and predicts on N
+  random annotated crops, printing a table of truth vs prediction.
+
+## Visualization (`graphify-out/` — local-only)
+3D interactive knowledge graph of the pipeline (174 nodes, 250 edges,
+20 communities, 10 phases pinned along an X-axis rail), generated by
+`graphify` (PyPI `graphifyy`) + a custom 3D renderer using
+`3d-force-graph` (ThreeJS). Open `graphify-out/graph3d.html` in any
+browser — no server needed. Combines AST extraction from `src/*.py`
++ hand-curated pipeline orchestration (phase order, data flow,
+rationales) from `orchestration.json`.
+
+Regenerate after code or doc changes:
+```bash
+/Users/nico/.local/share/uv/tools/graphifyy/bin/python graphify-out/regen.py
+```
+~2 seconds, zero LLM tokens, no network access. The whole `graphify-out/`
+folder is gitignored — it's an aid to local navigation, not project
+deliverable. Full doc + edge legend in `graphify-out/graphify.md`.
+
 ## Test run log
 
 Reverse-chronological. Each entry = one `runs/testNN/`. Params only list
 what differs from the immediate predecessor.
 
+- **test21 — Full pipeline avec PARSeq Hockey + RILH fine-tune sur
+  Video 04 + 05.** Première run de l'OCR fine-tuné en pipeline complet.
+  Réutilise `tracks.json` existants (test13 pour Video 04, test18 pour
+  Video 05) — Phases 1.5, 1.6, 6 identify, 6 annotate refaites.
+  * **Phase 6 identify** : `--ocr-engine parseq --parseq-checkpoint
+    models/parseq_hockey_rilh.pt`. Crop Koshkina-style (full torso).
+  * **Validation contre annotations utilisateur** :
+    - Video 04 (31 truth tracks) : 27 prédits, **26 corrects → précision
+      96 %, recall 84 %** (vs Koshkina seul 63 %/55 %, vs TrOCR 53 %/29 %).
+    - Video 05 (48 truth tracks) : 41 prédits, **39 corrects → précision
+      95 %, recall 81 %** (vs Koshkina seul 68 %/58 %, vs TrOCR 40 %/17 %).
+  * **Phase 1.6 entités** : Video 04 → 24 entités (1 G, top-10 = 9 numéros
+    identifiés). Video 05 → 36 entités (5 G, top-10 = 9 numéros).
+    Beaucoup plus propre qu'avant (test16 avait 17 G erronés, test18
+    avait des hallucinations TrOCR `CASHIER`/`AMOUNT` sur les noms).
+  * **Vidéos finales** : `runs/test21/video04/annotated_numbered.mp4`
+    (120 MB), `runs/test21/video05/annotated_numbered.mp4` (206 MB).
+    Debug frames (final + phase1) au 1/10.
+  * **Limitation restante** : noms de joueurs à 0 (PARSeq Hockey est
+    digit-only). À traiter par soit garder TrOCR pour les noms, soit
+    annoter + fine-tuner PARSeq sur des crops noms.
+  Bug intermédiaire : premier essai de test21 → 0 prédiction parce que
+  le loader doublait le préfixe `model.` (Koshkina sans préfixe vs notre
+  checkpoint fine-tuné qui en a un). Détection auto du préfixe ajoutée
+  → re-run OK.
+- **test20 — Phase 6 identify avec PARSeq Hockey baseline (sans fine-tune)
+  sur Video 04 + 05.** Première intégration du loader Koshkina dans
+  `phase6_identify.py` (option `--parseq-checkpoint`). Crop Koshkina-
+  style (full torso). Direct-resize sans letterbox.
+  * Video 04 : 59/167 tracks identifiés (35.3 %), recall 55 %.
+  * Video 05 : 156/435 tracks identifiés (35.9 %), recall 58 %.
+  * Précision 63 % / 68 % — ×2-3 le recall vs TrOCR baseline test19.
+  * Names : 0 (PARSeq Hockey digit-only).
+  Smoke test loader sur 200 crops annotés : 74 % exact match.
+- **test19 — Collecte crops dorsal sur 4 vidéos pour annotation +
+  fine-tune.** Génération de matériel d'entraînement, pas un test
+  pipeline. Réutilise `tracks.json` de test04 (clip60-2), test13
+  (Video 04), test18 (Video 05). Phase 1 nouveau sur clip60.mp4.
+  * Première passe : crop bande étroite 15-65 % torse + 30 % pad.
+    3 233 crops produits, hauteur médiane ~35 px → utilisateur trouve
+    ça difficile à annoter à l'œil.
+  * **Pivot** : crop refait à la Koshkina (full shoulder→hip + 5px pad),
+    régénéré sur les 4 vidéos. **Hauteur médiane doublée** (~80 px),
+    aspect ratio passé de 1.81 (large) à 0.78 (carré-ish).
+  * **3 528 crops** dans `runs/test19/{clip60,clip60-2,video04,video05}/
+    debug_crops/numbers/`. Annotation manuelle via
+    `tools/annotate_crops.py` (web UI localhost). Annotations sauvées
+    dans `runs/test19/annotations.json` puis consolidées dans
+    `data/jersey_numbers/` (license-clean, indépendant Koshkina).
+  * **1 068 crops avec numéro** (38 numéros uniques) + **2 460 X**
+    (no number visible). Top-10 numéros : #9 (112), #20 (90), #5 (77),
+    #11 (73), #77 (71), #6 (69), #13 (62), #14 (60), #87 (49), #92 (43).
 - **test17 — Villeneuve vs Vierzon (Video 05) — filtre spectator multi-signal.**
   Pipeline complet relancé. Phase 1 inchangée vs test16 (HockeyAI +
   match-mode default, 1 puck/frame). Nouveauté Phase 1.5 : `is_static` =
@@ -456,24 +583,30 @@ what differs from the immediate predecessor.
 (XS <30min, S ~1h, M ~1j, L ~1sem, XL >1sem). Pour les chantiers structurels
 multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 
-### P0 — Prochaine itération
-- **Pipeline test18** : pipeline complet sans le filtre spectator
-  (retiré) avec `--ocr-engine together` (PARSeq + TrOCR cross-check).
-  Sert de baseline propre pour mesurer Phase 3 quand elle arrivera,
-  valider que les wins v2 tiennent hors filtre spectator, et mesurer
-  l'effet de l'ensembling sur les hallucinations TrOCR. Phase 1 ~1h. — M
+### P0 — Itération courante
+- **Revue visuelle des MP4 test21** par utilisateur sur Video 04 + 05.
+  Confirmer : (a) numéros stables sur les players principaux,
+  (b) goalies bien tagués, (c) erreurs résiduelles à catégoriser
+  pour la prochaine itération. Aucun travail à faire de mon côté
+  tant que le verdict n'est pas posé. — XS
 
 ### P1 — Court terme
-- **Stop-list TrOCR** comme fallback si l'ensembling laisse encore
-  passer des hallucinations solo (cas où PARSeq est silencieux et
-  TrOCR seul passe le ×0.7) : `CASHIER`, `CASH`, `AMOUNT`, `TAX`,
-  `QTY`, `ITEM`, `MCAUD`, `MAY`. À ajouter dans `_filter_name` de
-  `phase6_identify.py`. — XS
+- **Name OCR** — manquant aujourd'hui (PARSeq Hockey est digit-only,
+  donc 0 noms identifiés sur test21). Deux chemins :
+  (a) garder TrOCR en parallèle uniquement pour les noms (~340 MB +
+  hallucinations à filtrer via stop-list) ;
+  (b) annoter ~500 crops avec noms via `tools/annotate_crops.py`
+  adapté + fine-tuner PARSeq Hockey sur ces noms (probablement
+  meilleur résultat, requiert annotation). — S–L
 - **Cache pose entre Phase 1.5 et Phase 6 identify** : aujourd'hui
   yolo26l-pose tourne 2× sur les mêmes frames. Écrire `pose_cache.json`
   en P1.5 et le lire en P6 sauve ~20-30 % wall-clock pipeline. — S
 - **Phase 1.5 + Phase 6 identify en parallèle** (processus séparés).
   Gain ~10-20 % supplémentaire (overlap GPU/CPU). — S
+- **Stop-list TrOCR** comme fallback si on garde TrOCR pour les
+  noms (cas où PARSeq est silencieux et TrOCR solo passe le ×0.7) :
+  `CASHIER`, `CASH`, `AMOUNT`, `TAX`, `QTY`, `ITEM`, `MCAUD`, `MAY`.
+  À ajouter dans `_filter_name` de `phase6_identify.py`. — XS
 
 ### P2 — Court-moyen terme
 - **Fix team classification Phase 1.5** : sur test15, 6 tracks/435 mal
