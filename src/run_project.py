@@ -106,38 +106,38 @@ def run_p1_detect_track(video, out, args):
     cmd.extend(["--conf", str(args.conf), "--imgsz", str(args.imgsz),
                 "--tracker", args.tracker])
     if not step("Stage 1.a — Detect & track", cmd,
-                [out / "p1_detections.json"], args.force):
+                [out / "p1_a_detections.json"], args.force):
         raise SystemExit("Stage 1.a failed — halting Phase 1")
 
     # Stage 1.b — teams
     cmd = [PYTHON, "-u", str(SRC / "p1_b_teams.py"),
-           str(out / "p1_detections.json"), str(video),
+           str(out / "p1_a_detections.json"), str(video),
            "--pose-model", args.pose_model]
     if not step("Stage 1.b — Teams", cmd,
-                [out / "p1_teams.json"], args.force):
+                [out / "p1_b_teams.json"], args.force):
         raise SystemExit("Stage 1.b failed — halting Phase 1")
 
     # Stage 1.c — numbers (jersey OCR)
     cmd = [PYTHON, "-u", str(SRC / "p1_c_numbers.py"),
-           str(out / "p1_detections.json"), str(video),
+           str(out / "p1_a_detections.json"), str(video),
            "--pose-model", args.pose_model]
     if args.parseq_checkpoint:
         cmd.extend(["--parseq-checkpoint", args.parseq_checkpoint])
     if not step("Stage 1.c — Numbers", cmd,
-                [out / "p1_numbers.json"], args.force):
+                [out / "p1_c_numbers.json"], args.force):
         raise SystemExit("Stage 1.c failed — halting Phase 1")
 
     # Stage 1.d — entities (Re-ID merge)
     cmd = [PYTHON, "-u", str(SRC / "p1_d_entities.py"),
-           str(out / "p1_detections.json"), str(out / "p1_teams.json"),
-           str(out / "p1_numbers.json"), str(video)]
+           str(out / "p1_a_detections.json"), str(out / "p1_b_teams.json"),
+           str(out / "p1_c_numbers.json"), str(video)]
     if not step("Stage 1.d — Entities", cmd,
-                [out / "p1_entities.json"], args.force):
+                [out / "p1_d_entities.json"], args.force):
         raise SystemExit("Stage 1.d failed — halting Phase 1")
 
     # Stage 1.e — annotate (final MP4)
     cmd = [PYTHON, "-u", str(SRC / "p1_e_annotate.py"),
-           str(out / "p1_detections.json"), str(out / "p1_numbers.json"),
+           str(out / "p1_a_detections.json"), str(out / "p1_c_numbers.json"),
            str(video), "--output", str(out / "annotated.mp4")]
     if not step("Stage 1.e — Annotate", cmd,
                 [out / "annotated.mp4"], args.force):
@@ -145,13 +145,13 @@ def run_p1_detect_track(video, out, args):
 
 
 def run_p2_followcam(video, out, args):
-    """Run Phase 2 — Virtual follow-cam. Depends on p1_detections.json from Stage 1.a."""
+    """Run Phase 2 — Virtual follow-cam. Depends on p1_a_detections.json from Stage 1.a."""
     print(f"\n========== Phase 2 — Virtual follow-cam ==========")
-    if not (out / "p1_detections.json").exists():
-        print("  ⚠ p1_detections.json missing — Phase 2 needs Stage 1.a; skipping")
+    if not (out / "p1_a_detections.json").exists():
+        print("  ⚠ p1_a_detections.json missing — Phase 2 needs Stage 1.a; skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p2_a_followcam.py"),
-           str(out / "p1_detections.json"), str(video),
+           str(out / "p1_a_detections.json"), str(video),
            "--output", str(out / "followcam.mp4")]
     step("Stage 2.a — Follow-cam", cmd, [out / "followcam.mp4"], args.force)
 
@@ -165,7 +165,7 @@ def run_p3_rink(video, out, args):
     cmd = [PYTHON, "-u", str(SRC / "p3_a_rink.py"),
            str(video), "--output", str(out)]
     ok = step("Stage 3.a — Rink keypoints", cmd,
-              [out / "p3_rink_keypoints.json"], args.force)
+              [out / "p3_a_rink_keypoints.json"], args.force)
     if not ok:
         print("  ⚠ Phase 3 is parked (HockeyRink doesn't transfer to roller). "
               "Continuing.")
@@ -174,25 +174,25 @@ def run_p3_rink(video, out, args):
 def run_p4_events(out, args):
     """Run Phase 4 — Event detection (stub). Writes a marker JSON."""
     print(f"\n========== Phase 4 — Event detection (stub) ==========")
-    if not (out / "p1_detections.json").exists() or not (out / "p1_entities.json").exists():
-        print("  ⚠ Phase 4 needs p1_detections.json + p1_entities.json — skipping")
+    if not (out / "p1_a_detections.json").exists() or not (out / "p1_d_entities.json").exists():
+        print("  ⚠ Phase 4 needs p1_a_detections.json + p1_d_entities.json — skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p4_a_events.py"),
-           str(out / "p1_detections.json"), str(out / "p1_entities.json"),
-           "--output", str(out / "p4_events.json")]
-    step("Stage 4.a — Events", cmd, [out / "p4_events.json"], args.force)
+           str(out / "p1_a_detections.json"), str(out / "p1_d_entities.json"),
+           "--output", str(out / "p4_a_events.json")]
+    step("Stage 4.a — Events", cmd, [out / "p4_a_events.json"], args.force)
 
 
 def run_p5_stats(out, args):
     """Run Phase 5 — Statistics creation (stub). Writes a marker JSON."""
     print(f"\n========== Phase 5 — Statistics (stub) ==========")
-    if not (out / "p1_entities.json").exists() or not (out / "p1_numbers.json").exists():
-        print("  ⚠ Phase 5 needs p1_entities.json + p1_numbers.json — skipping")
+    if not (out / "p1_d_entities.json").exists() or not (out / "p1_c_numbers.json").exists():
+        print("  ⚠ Phase 5 needs p1_d_entities.json + p1_c_numbers.json — skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p5_a_stats.py"),
-           str(out / "p1_entities.json"), str(out / "p1_numbers.json"),
-           "--output", str(out / "p5_stats.json")]
-    step("Stage 5.a — Stats", cmd, [out / "p5_stats.json"], args.force)
+           str(out / "p1_d_entities.json"), str(out / "p1_c_numbers.json"),
+           "--output", str(out / "p5_a_stats.json")]
+    step("Stage 5.a — Stats", cmd, [out / "p5_a_stats.json"], args.force)
 
 
 def main():

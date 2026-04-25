@@ -2,8 +2,8 @@
 RILH-AI-Vision — p1_c_numbers
 Per-track jersey-number OCR via PARSeq.
 
-Inputs : p1_detections.json (p1_a_detect) + the source video.
-Output : p1_numbers.json — per player-track jersey number + confidence,
+Inputs : p1_a_detections.json (p1_a_detect) + the source video.
+Output : p1_c_numbers.json — per player-track jersey number + confidence,
          plus optional track-merge groups for players whose track id was
          broken and re-issued by the tracker.
 
@@ -396,11 +396,11 @@ def run(
 ):
     """Run the full per-track jersey-number identification pipeline.
 
-    For each player track in ``p1_detections.json``, sample N high-conf
+    For each player track in ``p1_a_detections.json``, sample N high-conf
     detections, run YOLO pose on those frames, isolate back-facing
     samples, crop the dorsal jersey region Koshkina-style, OCR with
     PARSeq, vote per track (≥ 2 agreeing votes required), and write
-    ``p1_numbers.json`` plus an optional debug-crop dump.
+    ``p1_c_numbers.json`` plus an optional debug-crop dump.
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -588,10 +588,10 @@ def main():
         description="RILH-AI-Vision — p1_c_numbers : per-track jersey OCR"
     )
     p.add_argument("detections_json", type=str,
-                   help="Path to p1_a_detect output (p1_detections.json)")
+                   help="Path to p1_a_detect output (p1_a_detections.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON path (default: <detections_dir>/p1_numbers.json)")
+                   help="Output JSON path (default: <detections_dir>/p1_c_numbers.json)")
     p.add_argument("--pose-model", type=str, default="yolo11n-pose.pt",
                    help="YOLO pose model. Examples: yolo11n-pose.pt (default, "
                         "~6MB, fast), yolo11x-pose.pt (best YOLO11 pose), "
@@ -617,7 +617,7 @@ def main():
     detections_json = Path(args.detections_json)
     video = Path(args.video)
     output = (Path(args.output) if args.output
-              else detections_json.with_name("p1_numbers.json"))
+              else detections_json.with_name("p1_c_numbers.json"))
     debug_dir = Path(args.debug_crops_dir) if args.debug_crops_dir else None
     parseq_ckpt = (Path(args.parseq_checkpoint)
                    if args.parseq_checkpoint else None)

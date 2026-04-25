@@ -28,18 +28,18 @@ See `CLAUDE.md` for the full test log, design decisions, and open blockers.
 
 Phase 1 stages (the identification sub-pipeline):
 
-- **`src/p1_a_detect.py`** — detection + tracking. Outputs `p1_detections.json`.
-- **`src/p1_b_teams.py`** — team classification from per-track jersey color. Outputs `p1_teams.json` + `teams_preview.png`.
-- **`src/p1_c_numbers.py`** — jersey-number OCR via PARSeq. Outputs `p1_numbers.json`.
-- **`src/p1_d_entities.py`** — entity Re-ID clustering. Outputs `p1_entities.json`.
+- **`src/p1_a_detect.py`** — detection + tracking. Outputs `p1_a_detections.json`.
+- **`src/p1_b_teams.py`** — team classification from per-track jersey color. Outputs `p1_b_teams.json` + `teams_preview.png`.
+- **`src/p1_c_numbers.py`** — jersey-number OCR via PARSeq. Outputs `p1_c_numbers.json`.
+- **`src/p1_d_entities.py`** — entity Re-ID clustering. Outputs `p1_d_entities.json`.
 - **`src/p1_e_annotate.py`** — final video annotation. Reads everything above; outputs `annotated.mp4`.
 
 Other phase scripts:
 
-- **`src/p2_a_followcam.py`** — broadcast follow-cam. Reads `p1_detections.json`; outputs `followcam.mp4`.
+- **`src/p2_a_followcam.py`** — broadcast follow-cam. Reads `p1_a_detections.json`; outputs `followcam.mp4`.
 - **`src/p3_a_rink.py`** — parked rink-calibration sanity check (kept for future Phase 3 work).
-- **`src/p4_a_events.py`** — STUB. Writes `p4_events.json` marker.
-- **`src/p5_a_stats.py`** — STUB. Writes `p5_stats.json` marker.
+- **`src/p4_a_events.py`** — STUB. Writes `p4_a_events.json` marker.
+- **`src/p5_a_stats.py`** — STUB. Writes `p5_a_stats.json` marker.
 
 Configs + tools:
 
@@ -173,7 +173,7 @@ python src/p1_e_annotate.py \
   runs/match01/numbers.json \
   path/to/match.mp4 \
   --output runs/match01/annotated.mp4
-# auto-discovers p1_teams.json + p1_entities.json next to p1_detections.json if present
+# auto-discovers p1_b_teams.json + p1_d_entities.json next to p1_a_detections.json if present
 ```
 
 Final MP4 with team-coloured boxes, `t{id} {G|S} #NN` per-track labels
@@ -205,7 +205,7 @@ Uses class 32 ("sports ball") as a puck proxy. Almost never catches a roller hoc
 
 ### `--hockey-model`: HockeyAI
 
-[HockeyAI](https://huggingface.co/SimulaMet-HOST/HockeyAI) is a YOLOv8m fine-tuned on ice hockey (SimulaMet-HOST). Seven classes: center ice, faceoff dots, goal frame, goaltender, players, puck, referee. The weights transfer well to roller inline hockey and are auto-downloaded (~52 MB) to `models/HockeyAI_model_weight.pt` on first use. Class IDs are remapped at the source so the `p1_detections.json` output stays uniform across backends (player + goaltender → `class_id=0`, puck → `class_id=32`, referee + rink markers are dropped).
+[HockeyAI](https://huggingface.co/SimulaMet-HOST/HockeyAI) is a YOLOv8m fine-tuned on ice hockey (SimulaMet-HOST). Seven classes: center ice, faceoff dots, goal frame, goaltender, players, puck, referee. The weights transfer well to roller inline hockey and are auto-downloaded (~52 MB) to `models/HockeyAI_model_weight.pt` on first use. Class IDs are remapped at the source so the `p1_a_detections.json` output stays uniform across backends (player + goaltender → `class_id=0`, puck → `class_id=32`, referee + rink markers are dropped).
 
 On a typical 60s wide-angle clip (1920×1080 @ 60 fps):
 
@@ -242,7 +242,7 @@ None of these hit the ideal ~12 entities on fragmented source video. Stage 1.d t
 
 - Trim to a 60-second test clip first: `ffmpeg -i full_match.mp4 -ss 0 -t 60 -c copy clip.mp4`
 - Iterate stage-c / stage-e parameters on a single stage-a run — you don't need to re-detect each time
-- Open `p1_detections.json` to inspect the data structure for custom analytics
+- Open `p1_a_detections.json` to inspect the data structure for custom analytics
 - The `--debug-overlay` output (Stage 2.a) is your best friend for understanding why the camera moves the way it does
 - Always pass `python -u` for long runs — stdout is block-buffered by default, which makes progress invisible
 - Outputs are kept incrementally: `runs/run01/`, `runs/run02/`, … never overwrite a previous run, even if it failed

@@ -4,12 +4,12 @@ Merge fragmented P1.a tracks into stable entities (one entity = one
 real player / goalie) via post-hoc Re-ID clustering.
 
 Inputs (three JSONs produced by earlier stages + the source video):
-  - p1_detections.json   (p1_a_detect)
-  - p1_teams.json        (p1_b_teams)        — team_id + vote_conf
-  - p1_numbers.json      (p1_c_numbers)      — OCR jersey number
+  - p1_a_detections.json   (p1_a_detect)
+  - p1_b_teams.json        (p1_b_teams)        — team_id + vote_conf
+  - p1_c_numbers.json      (p1_c_numbers)      — OCR jersey number
   - video.mp4                                — for embedding crops
 
-Output: p1_entities.json
+Output: p1_d_entities.json
   Maps entity_id -> list of merged track_ids, with team_id, is_goaltender,
   jersey_number (if OCR'd), per-entity frame range and coverage, plus a
   list of unmatched singleton tracks.
@@ -410,7 +410,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     Loads P1.a/b/c outputs, computes per-track OSNet medoid
     embeddings, builds a pair-wise merge graph under team / non-overlap
     / OCR-conflict constraints, runs greedy union-find merging, and
-    writes ``p1_entities.json`` with the resulting clusters.
+    writes ``p1_d_entities.json`` with the resulting clusters.
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -513,14 +513,14 @@ def main():
         description="RILH-AI-Vision — p1_d_entities : merge tracks into entities"
     )
     p.add_argument("detections_json", type=str,
-                   help="P1.a output (p1_detections.json)")
+                   help="P1.a output (p1_a_detections.json)")
     p.add_argument("teams_json", type=str,
-                   help="P1.b output (p1_teams.json)")
+                   help="P1.b output (p1_b_teams.json)")
     p.add_argument("numbers_json", type=str,
-                   help="P1.c output (p1_numbers.json)")
+                   help="P1.c output (p1_c_numbers.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON (default: <detections_dir>/p1_entities.json)")
+                   help="Output JSON (default: <detections_dir>/p1_d_entities.json)")
     p.add_argument("--samples-per-track", type=int, default=8)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--sim-threshold", type=float, default=0.65,
@@ -547,7 +547,7 @@ def main():
     numbers_json = Path(args.numbers_json)
     video_path = Path(args.video)
     output = (Path(args.output) if args.output
-              else detections_json.with_name("p1_entities.json"))
+              else detections_json.with_name("p1_d_entities.json"))
 
     run(
         detections_json, teams_json, numbers_json, video_path, output,

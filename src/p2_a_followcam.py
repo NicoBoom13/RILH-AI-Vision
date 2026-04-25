@@ -119,7 +119,7 @@ def get_crop_window(focus, frame_w, frame_h, crop_w, crop_h):
 def run(tracks_path: Path, video_path: Path, output_path: Path,
         zoom: float, alpha: float, puck_weight: float,
         polish_window: int, debug_overlay: bool):
-    """Render a virtual broadcast follow-cam from p1_detections.json.
+    """Render a virtual broadcast follow-cam from p1_a_detections.json.
 
     Computes a focus point per frame as a weighted blend of the puck
     position and the players' centroid, smooths the trajectory with
@@ -215,7 +215,7 @@ def run(tracks_path: Path, video_path: Path, output_path: Path,
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
     parser = argparse.ArgumentParser(description="RILH-AI-Vision — p2_a_followcam : virtual follow-cam")
-    parser.add_argument("tracks", type=str, help="Path to p1_detections.json from P1.a")
+    parser.add_argument("tracks", type=str, help="Path to p1_a_detections.json from P1.a")
     parser.add_argument("video", type=str, help="Path to original video")
     parser.add_argument("--output", type=str, default="runs/latest/followcam.mp4")
     parser.add_argument("--zoom", type=float, default=2.0,

@@ -8,11 +8,11 @@ saves, possession, etc. — once event detection (P4) is real, this
 stage will key on those events too.
 
 Inputs:
-  p1_entities.json (P1.d)
-  p1_numbers.json  (P1.c)
+  p1_d_entities.json (P1.d)
+  p1_c_numbers.json  (P1.c)
 
 Outputs:
-  p5_stats.json — {status: "stub_no_op", ran_at: "<ISO timestamp>"}
+  p5_a_stats.json — {status: "stub_no_op", ran_at: "<ISO timestamp>"}
 
 The orchestrator (`src/run_project.py`) calls this script as part of
 the default pipeline so the wiring is exercised. The stub does nothing
@@ -30,9 +30,9 @@ def main():
     confirm the stage ran in a given run folder."""
     p = argparse.ArgumentParser(description="P5.a statistics stub (no-op)")
     p.add_argument("entities_json", type=str,
-                   help="P1.d output (p1_entities.json) — read by future impl")
+                   help="P1.d output (p1_d_entities.json) — read by future impl")
     p.add_argument("numbers_json", type=str,
-                   help="P1.c output (p1_numbers.json) — read by future impl")
+                   help="P1.c output (p1_c_numbers.json) — read by future impl")
     p.add_argument("--output", required=True, type=str,
                    help="Output marker JSON path")
     args = p.parse_args()

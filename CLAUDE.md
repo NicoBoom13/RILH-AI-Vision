@@ -45,7 +45,7 @@ analytics. Built from open-source modules + custom code only.
   embedding per track + greedy merge under **same-team constraint**
   (from Stage 1.b), **strict temporal non-overlap**, and **OCR bonus**
   (from Stage 1.c). OCR conflicts are a hard block. Output:
-  `p1_entities.json` consumed downstream by `p1_e_annotate.py`. On
+  `p1_d_entities.json` consumed downstream by `p1_e_annotate.py`. On
   run12 (250 tracks → 40 entities), on run13 (167 tracks → 24
   entities). Doesn't replace the tracker — it post-processes its
   output. Entity-level `is_goaltender` is weighted by frame coverage
@@ -53,12 +53,12 @@ analytics. Built from open-source modules + custom code only.
   `docs/p1_d_entities_design.md`.
 - **Stage 1.e (Annotate)** ✅ : final MP4 with team-coloured boxes,
   per-track label `t{id} {G|S} #NN` (track id always shown),
-  dark-gray puck box, short traces. Auto-discovers `p1_teams.json` and
-  `p1_entities.json` next to `p1_detections.json` if present. Optional
+  dark-gray puck box, short traces. Auto-discovers `p1_b_teams.json` and
+  `p1_d_entities.json` next to `p1_a_detections.json` if present. Optional
   `--debug-frames-dir` writes 1 PNG every N frames.
 - **Stage 2.a (Follow-cam)** ✅ : virtual broadcast cam. Built but not
   heavily iterated on; runs in parallel to stages b–e (only depends
-  on `p1_detections.json`).
+  on `p1_a_detections.json`).
 - **Stage 3.a (Rink calibration)** ❌ PARKED. The obvious shortcut
   (HockeyRink keypoints) **does not transfer to roller rinks** — see
   run05–run07 in the test log. Needs a roller-specific annotated
@@ -92,36 +92,36 @@ Each phase decomposes into one or more stages, named `pN_x_*.py`:
 
 **Phase 1 — Detect & track** (5 stages, sequential):
 
-1. `src/p1_a_detect.py` → `p1_detections.json` (per-frame bboxes, class IDs,
+1. `src/p1_a_detect.py` → `p1_a_detections.json` (per-frame bboxes, class IDs,
    persistent track IDs). HockeyAI YOLO + ByteTrack. Match-mode default
    keeps top-1 puck per frame; pass `--training-mode` for drills.
-2. `src/p1_b_teams.py` → `p1_teams.json` + `teams_preview.png`: team_id
+2. `src/p1_b_teams.py` → `p1_b_teams.json` + `teams_preview.png`: team_id
    (0/1) per player track via k=2 on pose-based torso color.
-3. `src/p1_c_numbers.py` → `p1_numbers.json`: per-track jersey number via
+3. `src/p1_c_numbers.py` → `p1_c_numbers.json`: per-track jersey number via
    YOLO pose + PARSeq (`--parseq-checkpoint models/parseq_hockey_rilh.pt`
    for our RILH-fine-tuned model). Crop is Koshkina-style.
-4. `src/p1_d_entities.py` → `p1_entities.json`: fragmented tracks collapsed
+4. `src/p1_d_entities.py` → `p1_d_entities.json`: fragmented tracks collapsed
    into stable entities via OSNet embeddings + team/overlap/OCR constraints.
 5. `src/p1_e_annotate.py` → annotated MP4 with team-coloured boxes +
    `t{id} {G|S} #NN` labels.
 
 **Phase 2 — Virtual follow-cam** (1 stage):
 
-- `src/p2_a_followcam.py` → `followcam.mp4`. Reads only `p1_detections.json`,
+- `src/p2_a_followcam.py` → `followcam.mp4`. Reads only `p1_a_detections.json`,
   runs in parallel to Phase 1 stages b-e.
 
 **Phase 3 — Rink calibration** (1 stage, parked):
 
-- `src/p3_a_rink.py` → `p3_rink_keypoints.json` (would be), but HockeyRink
+- `src/p3_a_rink.py` → `p3_a_rink_keypoints.json` (would be), but HockeyRink
   doesn't transfer to roller. Orchestrator tolerates the failure.
 
 **Phase 4 — Event detection** (1 stage, stub):
 
-- `src/p4_a_events.py` → `p4_events.json` marker. Real impl pending.
+- `src/p4_a_events.py` → `p4_a_events.json` marker. Real impl pending.
 
 **Phase 5 — Statistics creation** (1 stage, stub):
 
-- `src/p5_a_stats.py` → `p5_stats.json` marker. Real impl pending.
+- `src/p5_a_stats.py` → `p5_a_stats.json` marker. Real impl pending.
 
 Why multi-pass: detection is the slow step. Decoupling lets us iterate on
 cinematography, identification, and analytics without re-running inference.
@@ -145,14 +145,14 @@ Two detector backends, selectable at runtime in `p1_a_detect.py`:
   schema stays uniform across backends: player + goaltender → `class_id=0`,
   puck → `class_id=32`, referee + rink markers are dropped.
 
-Both backends write the same `p1_detections.json` schema (plus a `class_name`
+Both backends write the same `p1_a_detections.json` schema (plus a `class_name`
 string per detection), so every downstream stage is backend-agnostic.
 
 **Match vs training mode.** Stage 1.a enforces 1-puck-per-frame by default
 (real match conditions): when multiple puck detections appear in the
 same frame, only the highest-confidence one is kept (after the tracker
 has assigned IDs, so the dropped duplicates simply never reach
-`p1_detections.json`). Pass `--training-mode` to disable the filter —
+`p1_a_detections.json`). Pass `--training-mode` to disable the filter —
 useful for drills where multiple pucks are intentionally on the ice.
 
 ### Tracker backends (Stage 1.a)
@@ -226,7 +226,7 @@ inference tractable):
 4. Greedy merge in descending weight until similarity drops below
    `--sim-threshold` (default 0.65). Re-checks overlap on the merged
    cluster each time.
-5. Output: `p1_entities.json` with `track_ids` lists, derived
+5. Output: `p1_d_entities.json` with `track_ids` lists, derived
    `team_id` / `is_goaltender` / `jersey_number` / frame ranges, plus a
    list of unmatched singleton tracks.
 
@@ -249,10 +249,10 @@ calibration** (geometric "is this bbox on the ice?") to do this cleanly.
 Annotation (`p1_e_annotate.py`):
 - Supervision-style boxes/labels/traces. Box color is **forced green or
   blue** per team.
-- **Entity-aware**: if `p1_entities.json` exists, the label + team come
+- **Entity-aware**: if `p1_d_entities.json` exists, the label + team come
   from the entity (so every merged fragment shares the same `#NN`, name
   and colour across the video). Otherwise, per-track values from
-  `p1_teams.json` + `p1_numbers.json`.
+  `p1_b_teams.json` + `p1_c_numbers.json`.
 - Labels read `t{id} {G|S} #NN NAME` — track_id always shown (so user
   can give frame-level feedback), `G`/`S` from `is_goaltender`, `#??`
   if no number, name omitted if not identified.
@@ -376,7 +376,7 @@ what differs from the immediate predecessor.
 
 - **run21 — Full pipeline avec PARSeq Hockey + RILH fine-tune sur
   Video 04 + 05.** Première run de l'OCR fine-tuné en pipeline complet.
-  Réutilise `p1_detections.json` existants (run13 pour Video 04, run18 pour
+  Réutilise `p1_a_detections.json` existants (run13 pour Video 04, run18 pour
   Video 05) — Phases 1.5, 1.6, 6 identify, 6 annotate refaites.
   * **Stage 1.c** : `--ocr-engine parseq --parseq-checkpoint
     models/parseq_hockey_rilh.pt`. Crop Koshkina-style (full torso).
@@ -410,7 +410,7 @@ what differs from the immediate predecessor.
   Smoke test loader sur 200 crops annotés : 74 % exact match.
 - **run19 — Collecte crops dorsal sur 4 vidéos pour annotation +
   fine-tune.** Génération de matériel d'entraînement, pas un test
-  pipeline. Réutilise `p1_detections.json` de run04 (clip60-2), run13
+  pipeline. Réutilise `p1_a_detections.json` de run04 (clip60-2), run13
   (Video 04), run18 (Video 05). Stage 1.a nouveau sur clip60.mp4.
   * Première passe : crop bande étroite 15-65 % torse + 30 % pad.
     3 233 crops produits, hauteur médiane ~35 px → utilisateur trouve
@@ -489,7 +489,7 @@ what differs from the immediate predecessor.
   1.6→annotate), palet BGR(60,60,60), inversion `--match-mode` →
   `--training-mode` (1-puck désormais par défaut).
 - **run15 — Villeneuve vs Vierzon (Video 05) — debug mode + name OCR.**
-  Réutilise `p1_detections.json` + `p1_teams.json` de run14. Ajouts dans le
+  Réutilise `p1_a_detections.json` + `p1_b_teams.json` de run14. Ajouts dans le
   code : name OCR (crop au-dessus du numéro, TrOCR max_new_tokens=16
   pour noms / 6 pour numéros), `--debug-crops-dir` (2606 crops number+
   name sauvés), `--debug-frames-dir --debug-frames-step 10` dans
@@ -578,7 +578,7 @@ what differs from the immediate predecessor.
     fundamentally closer to the pale cluster. Accepted as final.
   Outputs preserved colocated: `tracks_teams_v1.json`,
   `tracks_teams_v2nogoalfix.json`, `annotated_numbered_v1.mp4`,
-  `annotated_numbered_v2nogoalfix.mp4`; current `p1_teams.json` /
+  `annotated_numbered_v2nogoalfix.mp4`; current `p1_b_teams.json` /
   `annotated_numbered.mp4` = v3.
 - **run11 — Stage 1.a HockeyAI + BoT-SORT+ReID+GMC (clip60-2).** 349 player
   tracks, 221 puck tracks. Longest track 639 frames (10.7s), 5 tracks ≥500
@@ -754,7 +754,7 @@ pondérées, sans rien jeter. Pondération par modèle possible (ex: HockeyAI
   `weighted_boxes_fusion(boxes_list, scores_list, labels_list, weights=...,
   iou_thr=0.5, skip_box_thr=0.0001)`.
 - Point d'insertion dans notre pipeline : juste avant l'écriture de
-  `p1_detections.json` dans `p1_a_detect.py`. Tout l'aval reste compatible.
+  `p1_a_detections.json` dans `p1_a_detect.py`. Tout l'aval reste compatible.
 
 ### Coût/bénéfice — pas une priorité actuelle
 
