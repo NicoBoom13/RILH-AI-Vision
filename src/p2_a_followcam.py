@@ -214,8 +214,8 @@ def run(tracks_path: Path, video_path: Path, output_path: Path,
 
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
-    parser = argparse.ArgumentParser(description="RILH-AI-Vision — stage_f_followcam : virtual follow-cam")
-    parser.add_argument("tracks", type=str, help="Path to detections.json from stage_a")
+    parser = argparse.ArgumentParser(description="RILH-AI-Vision — p2_a_followcam : virtual follow-cam")
+    parser.add_argument("tracks", type=str, help="Path to detections.json from P1.a")
     parser.add_argument("video", type=str, help="Path to original video")
     parser.add_argument("--output", type=str, default="runs/latest/followcam.mp4")
     parser.add_argument("--zoom", type=float, default=2.0,

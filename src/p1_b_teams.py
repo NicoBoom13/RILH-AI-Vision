@@ -1,5 +1,5 @@
 """
-RILH-AI-Vision — stage_b_teams
+RILH-AI-Vision — p1_b_teams
 Classify each player track into one of two teams.
 
 Pipeline (per sampled detection, not per frame — keeps inference tractable):
@@ -13,7 +13,7 @@ Pipeline (per sampled detection, not per frame — keeps inference tractable):
      Every crop gets a team label; each track inherits the majority vote.
 
 Inputs:
-  detections.json — produced by stage_a_detect (per-frame detections + tracks).
+  detections.json — produced by p1_a_detect (per-frame detections + tracks).
   video.mp4       — the source video, sampled for the cropped frames.
 
 Outputs:
@@ -24,7 +24,7 @@ Outputs:
                       Left gutter shows the team label and the centroid swatch.
 
 Roster (roller inline hockey): 4 skaters + 1 goalie per team, 1–2 refs.
-Refs are filtered upstream when stage_a used HockeyAI; they leak with COCO.
+Refs are filtered upstream when P1.a used HockeyAI; they leak with COCO.
 """
 
 import argparse
@@ -556,11 +556,11 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — stage_b_teams (pose torso + multi-point "
+        description="RILH-AI-Vision — p1_b_teams (pose torso + multi-point "
                     "+ per-crop vote)"
     )
     p.add_argument("detections_json", type=str,
-                   help="stage_a output (detections.json)")
+                   help="P1.a output (detections.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
                    help="Output JSON (default: <detections_dir>/teams.json)")

@@ -1,16 +1,16 @@
 """
-RILH-AI-Vision — stage_e_annotate
+RILH-AI-Vision — p1_e_annotate
 Render the final annotated MP4 from upstream stage outputs:
   - BoxAnnotator + LabelAnnotator + TraceAnnotator from supervision
-  - One fixed color per team (green / blue), inherited from stage_b
+  - One fixed color per team (green / blue), inherited from P1.b
   - Per-track label : `t{id} {G|S} #NN` (track id always shown, role
-    G/S from is_goaltender, jersey number from stage_c via stage_d
+    G/S from is_goaltender, jersey number from P1.c via P1.d
     entity rollup; `#??` if no number identified)
   - Puck rendered as a dark gray bbox (no label) + short trace
 
-Inputs : detections.json (stage_a), numbers.json (stage_c), the source
-         video; auto-discovers teams.json (stage_b) and entities.json
-         (stage_d) next to detections.json if present.
+Inputs : detections.json (P1.a), numbers.json (P1.c), the source
+         video; auto-discovers teams.json (P1.b) and entities.json
+         (P1.d) next to detections.json if present.
 Output : an annotated MP4 at the given --output path.
 """
 
@@ -154,12 +154,12 @@ def render(detections_data, numbers, team_of, video_path, output,
            entity_of_tid=None, entity_by_id=None,
            per_track_goalie=None,
            debug_frames_dir=None, debug_frames_step=10):
-    """Render. If entity_of_tid + entity_by_id are provided (stage_d
+    """Render. If entity_of_tid + entity_by_id are provided (P1.d
     output), each merged track inherits its entity's team_id,
     jersey_number, and is_goaltender so every member of the same entity
     is drawn with the same color + label across frames. Tracks outside
-    any entity fall back to per-track team_id (stage_b), per-track
-    jersey number (stage_c), and per-track is_goaltender (stage_b).
+    any entity fall back to per-track team_id (P1.b), per-track
+    jersey number (P1.c), and per-track is_goaltender (P1.b).
 
     If debug_frames_dir is given, every `debug_frames_step`-th frame is
     also written as a PNG to that folder for visual review."""
@@ -184,8 +184,8 @@ def render(detections_data, numbers, team_of, video_path, output,
 
     def team_for(tid_i):
         """Resolve a track id to its team. Prefer the entity-level
-        team_id (stage_d) when available; otherwise fall back to the
-        per-track team from stage_b."""
+        team_id (P1.d) when available; otherwise fall back to the
+        per-track team from P1.b."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -196,7 +196,7 @@ def render(detections_data, numbers, team_of, video_path, output,
 
     def jersey_for(tid_i):
         """Resolve a track id to its jersey number, preferring the
-        entity-level value (stage_d) when present."""
+        entity-level value (P1.d) when present."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -206,7 +206,7 @@ def render(detections_data, numbers, team_of, video_path, output,
 
     def goalie_for(tid_i):
         """Resolve a track id to its is_goaltender flag, preferring the
-        entity-level value (stage_d) when present."""
+        entity-level value (P1.d) when present."""
         if entity_of_tid is not None:
             eid = entity_of_tid.get(tid_i)
             if eid is not None:
@@ -287,8 +287,8 @@ def main():
     p = argparse.ArgumentParser(
         description="Annotate video: t{id} {G|S} #NN labels + team-coloured boxes"
     )
-    p.add_argument("detections_json", help="stage_a output (detections.json)")
-    p.add_argument("numbers_json", help="stage_c output (numbers.json)")
+    p.add_argument("detections_json", help="P1.a output (detections.json)")
+    p.add_argument("numbers_json", help="P1.c output (numbers.json)")
     p.add_argument("video", help="Source video")
     p.add_argument("--output", required=True, help="Output MP4 path")
     p.add_argument("--color-samples", type=int, default=6,
@@ -333,7 +333,7 @@ def main():
     n1 = sum(1 for t in team_of.values() if t == 1)
     print(f"  tracks assigned: team 0 = {n0}, team 1 = {n1}")
 
-    # Prefer entity-level team + jersey when stage_d has been run.
+    # Prefer entity-level team + jersey when P1.d has been run.
     entities_json_path = detections_json.with_name("entities.json")
     entity_of_tid = None
     entity_by_id = None

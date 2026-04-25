@@ -1,8 +1,8 @@
 """
-RILH-AI-Vision — stage_c_numbers
+RILH-AI-Vision — p1_c_numbers
 Per-track jersey-number OCR via PARSeq.
 
-Inputs : detections.json (stage_a_detect) + the source video.
+Inputs : detections.json (p1_a_detect) + the source video.
 Output : numbers.json — per player-track jersey number + confidence,
          plus optional track-merge groups for players whose track id was
          broken and re-issued by the tracker.
@@ -32,7 +32,7 @@ from PIL import Image
 from ultralytics import YOLO
 
 # In our remapped class space, every "person" detection (skater +
-# goaltender after HockeyAI's classes are collapsed in stage_a) is class 0.
+# goaltender after HockeyAI's classes are collapsed in P1.a) is class 0.
 PERSON_CLASS = 0
 
 # COCO-17 keypoint indices used by every Ultralytics pose model.
@@ -585,10 +585,10 @@ def run(
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — stage_c_numbers : per-track jersey OCR"
+        description="RILH-AI-Vision — p1_c_numbers : per-track jersey OCR"
     )
     p.add_argument("detections_json", type=str,
-                   help="Path to stage_a_detect output (detections.json)")
+                   help="Path to p1_a_detect output (detections.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
                    help="Output JSON path (default: <detections_dir>/numbers.json)")

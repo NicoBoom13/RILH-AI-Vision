@@ -1,12 +1,12 @@
 """
-RILH-AI-Vision — stage_d_entities
-Merge fragmented stage_a tracks into stable entities (one entity = one
+RILH-AI-Vision — p1_d_entities
+Merge fragmented P1.a tracks into stable entities (one entity = one
 real player / goalie) via post-hoc Re-ID clustering.
 
 Inputs (three JSONs produced by earlier stages + the source video):
-  - detections.json   (stage_a_detect)
-  - teams.json        (stage_b_teams)        — team_id + vote_conf
-  - numbers.json      (stage_c_numbers)      — OCR jersey number
+  - detections.json   (p1_a_detect)
+  - teams.json        (p1_b_teams)        — team_id + vote_conf
+  - numbers.json      (p1_c_numbers)      — OCR jersey number
   - video.mp4                                — for embedding crops
 
 Output: entities.json
@@ -14,9 +14,9 @@ Output: entities.json
   jersey_number (if OCR'd), per-entity frame range and coverage, plus a
   list of unmatched singleton tracks.
 
-Signals and constraints (see docs/stage_d_entities_design.md for the rationale):
+Signals and constraints (see docs/p1_d_entities_design.md for the rationale):
   - Appearance embedding: OSNet x0_25 medoid over top-conf crops per track
-  - Hard constraint — same team_id (from stage_b), both sides with
+  - Hard constraint — same team_id (from P1.b), both sides with
     vote_confidence >= `--team-conf-floor`
   - Hard constraint — strict temporal non-overlap (0 frames shared)
   - Hard constraint — OCR conflict (same team, different confident
@@ -164,7 +164,7 @@ def extract_track_embeddings(tracks_data, video_path, extractor,
     return embeddings
 
 
-def index_stage_b_stage_c(teams, numbers, team_conf_floor):
+def index_p1b_p1c(teams, numbers, team_conf_floor):
     """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf).
     Tracks with team vote_confidence < floor return team_id=None
     (ineligible for merging into any entity with a teammate — they
@@ -407,7 +407,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
         osnet_model):
     """Run the entity-clustering pipeline end-to-end.
 
-    Loads stage_a/b/c outputs, computes per-track OSNet medoid
+    Loads P1.a/b/c outputs, computes per-track OSNet medoid
     embeddings, builds a pair-wise merge graph under team / non-overlap
     / OCR-conflict constraints, runs greedy union-find merging, and
     writes ``entities.json`` with the resulting clusters.
@@ -420,11 +420,11 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     numbers = (json.loads(numbers_json.read_text())
                if numbers_json.exists() else None)
     if teams is None:
-        raise SystemExit(f"Missing {teams_json}: run stage_b_teams first")
+        raise SystemExit(f"Missing {teams_json}: run p1_b_teams first")
     if numbers is None:
         print(f"Warning: {numbers_json} missing — OCR signal won't be used")
 
-    team_of, is_goalie, jersey, jersey_conf = index_stage_b_stage_c(
+    team_of, is_goalie, jersey, jersey_conf = index_p1b_p1c(
         teams, numbers, team_conf_floor
     )
     n_eligible = sum(1 for _ in team_of)
@@ -510,14 +510,14 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — stage_d_entities : merge tracks into entities"
+        description="RILH-AI-Vision — p1_d_entities : merge tracks into entities"
     )
     p.add_argument("detections_json", type=str,
-                   help="stage_a output (detections.json)")
+                   help="P1.a output (detections.json)")
     p.add_argument("teams_json", type=str,
-                   help="stage_b output (teams.json)")
+                   help="P1.b output (teams.json)")
     p.add_argument("numbers_json", type=str,
-                   help="stage_c output (numbers.json)")
+                   help="P1.c output (numbers.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
                    help="Output JSON (default: <detections_dir>/entities.json)")
@@ -533,7 +533,7 @@ def main():
                         "conflicting OCR) from ending up in the same entity.")
     p.add_argument("--goalie-bonus", type=float, default=0.05)
     p.add_argument("--team-conf-floor", type=float, default=0.67,
-                   help="Drop tracks below this stage_b vote-confidence from "
+                   help="Drop tracks below this P1.b vote-confidence from "
                         "the merge graph (they become unmatched).")
     p.add_argument("--max-overlap-frames", type=int, default=0,
                    help="Strict zero by default (no shared frame between "

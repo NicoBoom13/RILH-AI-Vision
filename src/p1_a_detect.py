@@ -1,5 +1,5 @@
 """
-RILH-AI-Vision — stage_a_detect
+RILH-AI-Vision — p1_a_detect
 Detect & track players + puck with YOLO + ByteTrack — the entry point of
 the identification pipeline.
 
@@ -264,7 +264,7 @@ def run(
 
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
-    parser = argparse.ArgumentParser(description="RILH-AI-Vision — stage_a: detect & track")
+    parser = argparse.ArgumentParser(description="RILH-AI-Vision — P1.a: detect & track")
     parser.add_argument("video", type=str, help="Path to input video")
     parser.add_argument("--output", type=str, default="runs/latest", help="Output directory")
     parser.add_argument("--model", type=str, default="yolo11m.pt",

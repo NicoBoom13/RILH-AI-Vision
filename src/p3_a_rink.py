@@ -1,5 +1,5 @@
 """
-RILH-AI-Vision — stage_g_rink (PARKED)
+RILH-AI-Vision — p3_a_rink (PARKED)
 HockeyRink keypoint-detector transfer sanity check.
 
 Samples N evenly-spaced frames from a clip, runs HockeyRink inference,
