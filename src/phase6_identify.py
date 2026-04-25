@@ -109,25 +109,42 @@ def _torso_band_crop(frame, kp_xy, kp_conf, y_top_frac, y_bot_frac,
     return safe_crop(frame, [x1, y1, x2, y2])
 
 
-def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3,
-                    y_top_frac=0.15, y_bot_frac=0.65, x_pad_ratio=0.30):
-    """Crop the dorsal number band — the rectangle where the back number
-    actually sits.
+def torso_back_crop(frame, kp_xy, kp_conf, thr=0.3, padding_px=5):
+    """Crop the dorsal jersey region — Koshkina-style (matches the training
+    distribution of `parseq_hockey.pt`).
 
-    Vertical range: `y_top_frac` → `y_bot_frac` of the shoulder-to-hip span
-    (default 15–65 %, i.e. the upper half of the torso where the number is
-    centred — NOT the full torso).
+    Bounding box from the four torso keypoints (shoulders + hips):
+      x_min/x_max = leftmost / rightmost of {LSHO, RSHO, LHIP, RHIP}
+      y_min       = topmost  (= top of shoulders)
+      y_max       = bottom   (= hip line, no extra padding)
+    Then `padding_px` (default 5 px, matches Koshkina's PADDING constant)
+    is added on x_min, x_max, and y_min — but NOT y_max so the crop ends
+    cleanly at the hips.
 
-    Horizontal range: shoulder-width inflated by `x_pad_ratio` on each side
-    (default 30 %) to catch wide digits without cutting off edges.
-
-    This tight band has an aspect ratio (w:h) close to 2:1 instead of the
-    ~0.8:1 of the old full-torso crop, which is much closer to what PARSeq
-    expects (4:1 = 128:32). The remaining 2× discrepancy is absorbed by
-    letterbox padding inside ParseqOCR.read_batch, so PARSeq never sees a
-    horizontally-stretched digit."""
-    return _torso_band_crop(frame, kp_xy, kp_conf,
-                            y_top_frac, y_bot_frac, thr, x_pad_ratio)
+    This produces a roughly square crop covering the FULL shoulder-to-hip
+    torso, not the tight 15-65 % band the previous implementation used.
+    The wider vertical extent matches the data PARSeq Hockey was trained
+    on, so an off-the-shelf inference no longer faces a distribution shift."""
+    shos_ok = kp_conf[KP_LSHO] > thr and kp_conf[KP_RSHO] > thr
+    hips_ok = kp_conf[KP_LHIP] > thr and kp_conf[KP_RHIP] > thr
+    if not shos_ok:
+        return None
+    pts = [(kp_xy[KP_LSHO, 0], kp_xy[KP_LSHO, 1]),
+           (kp_xy[KP_RSHO, 0], kp_xy[KP_RSHO, 1])]
+    if hips_ok:
+        pts.append((kp_xy[KP_LHIP, 0], kp_xy[KP_LHIP, 1]))
+        pts.append((kp_xy[KP_RHIP, 0], kp_xy[KP_RHIP, 1]))
+    else:
+        # No hip keypoints — fall back to a 2.2× shoulder-width vertical span
+        sho_w = abs(kp_xy[KP_LSHO, 0] - kp_xy[KP_RSHO, 0])
+        sho_cy = (kp_xy[KP_LSHO, 1] + kp_xy[KP_RSHO, 1]) / 2.0
+        pts.append((kp_xy[KP_LSHO, 0], sho_cy + 2.2 * sho_w))
+        pts.append((kp_xy[KP_RSHO, 0], sho_cy + 2.2 * sho_w))
+    x_min = min(p[0] for p in pts) - padding_px
+    x_max = max(p[0] for p in pts) + padding_px
+    y_min = min(p[1] for p in pts) - padding_px
+    y_max = max(p[1] for p in pts)
+    return safe_crop(frame, [x_min, y_min, x_max, y_max])
 
 
 def torso_back_name_crop(frame, kp_xy, kp_conf, thr=0.3,
@@ -211,20 +228,35 @@ class TrOCR_OCR:
 
 
 class ParseqOCR:
-    """PARSeq scene-text recognition via torch.hub.
+    """PARSeq scene-text recognition.
 
-    Upstream PARSeq resizes its input directly to `model.hparams.img_size`
-    (typically 32×128, a 1:4 h:w aspect). Our torso crops are close to
-    square, so a naive resize stretches digits horizontally by ~3-4×,
-    which degrades recognition badly. We letterbox-pad each crop to 1:4
-    BEFORE the resize so PARSeq sees geometrically-correct digits."""
+    Two modes:
+      - Default (`checkpoint_path=None`): baudm/parseq pretrained on STR.
+        Crops are letterbox-padded to the model's 4:1 aspect before the
+        resize so generic STR doesn't see horizontally-stretched digits.
+      - Hockey (`checkpoint_path=models/parseq_hockey.pt`): Maria
+        Koshkina's PARSeq fine-tuned on hockey jersey numbers
+        (https://github.com/mkoshkina/jersey-number-pipeline). Same
+        baudm architecture, weights remapped via the `model.` prefix.
+        Trained with DIRECT resize (no letterbox), so we skip the
+        letterbox to match the training distribution.
 
-    def __init__(self, device):
+    Both modes apply the same digit/alpha filtering downstream."""
+
+    def __init__(self, device, checkpoint_path: Path | None = None):
         self.device = device
-        print("Loading PARSeq (first run downloads from github.com/baudm/parseq)…")
-        self.model = torch.hub.load(
-            "baudm/parseq", "parseq", pretrained=True, trust_repo=True
-        ).eval().to(device)
+        self.use_letterbox = True  # baudm-default behaviour
+        if checkpoint_path is None:
+            print("Loading PARSeq baudm pretrained (STR generic)…")
+            self.model = torch.hub.load(
+                "baudm/parseq", "parseq", pretrained=True, trust_repo=True
+            ).eval().to(device)
+        else:
+            print(f"Loading PARSeq from checkpoint: {checkpoint_path}")
+            self.model = self._load_external_checkpoint(checkpoint_path).to(device)
+            # Koshkina's training pipeline used direct resize, no letterbox
+            self.use_letterbox = False
+            print("  (direct-resize mode: no letterbox padding before resize)")
         self.img_size = self.model.hparams.img_size  # (h, w), usually (32, 128)
         from torchvision import transforms as T
         self.preprocess = T.Compose([
@@ -233,6 +265,36 @@ class ParseqOCR:
             T.Normalize(0.5, 0.5),
         ])
         self.target_w_over_h = float(self.img_size[1]) / float(self.img_size[0])
+
+    @staticmethod
+    def _load_external_checkpoint(checkpoint_path: Path):
+        """Load a Lightning-format PARSeq checkpoint into the baudm/parseq
+        architecture. Koshkina stores keys without the `model.` prefix
+        that baudm's wrapper module uses, so we remap them. Both projects
+        use the same 95-output (94-char + 1 special) head, so shapes
+        match without any patching."""
+        ckpt = torch.load(str(checkpoint_path), map_location="cpu",
+                          weights_only=False)
+        if "state_dict" not in ckpt:
+            raise SystemExit(f"{checkpoint_path}: no 'state_dict' key — "
+                             f"unexpected checkpoint format")
+        sd = ckpt["state_dict"]
+        model = torch.hub.load(
+            "baudm/parseq", "parseq", pretrained=False, trust_repo=True
+        ).eval()
+        # Prefix every key with `model.` to match baudm's wrapper layout
+        remapped = {f"model.{k}": v for k, v in sd.items()}
+        result = model.load_state_dict(remapped, strict=False)
+        if result.missing_keys or result.unexpected_keys:
+            print(f"  load report: {len(result.missing_keys)} missing, "
+                  f"{len(result.unexpected_keys)} unexpected")
+            if result.missing_keys:
+                print(f"  missing[:3]: {result.missing_keys[:3]}")
+            if result.unexpected_keys:
+                print(f"  unexpected[:3]: {result.unexpected_keys[:3]}")
+        else:
+            print(f"  ✓ all {len(remapped)} weights loaded cleanly")
+        return model
 
     @staticmethod
     def _letterbox_to_aspect(bgr, target_w_over_h, pad_value=0):
@@ -265,9 +327,13 @@ class ParseqOCR:
         caller's job (digits for numbers, alpha for names)."""
         if not bgr_crops:
             return []
-        letterboxed = [
-            self._letterbox_to_aspect(c, self.target_w_over_h) for c in bgr_crops
-        ]
+        if self.use_letterbox:
+            letterboxed = [
+                self._letterbox_to_aspect(c, self.target_w_over_h)
+                for c in bgr_crops
+            ]
+        else:
+            letterboxed = bgr_crops
         pil_imgs = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))
                     for c in letterboxed]
         batch = torch.stack([self.preprocess(im) for im in pil_imgs]).to(self.device)
@@ -299,9 +365,9 @@ class TogetherOCR:
     Cost: ~2× inference (both models on every crop). Both must be
     loaded in GPU memory (~390 MB total)."""
 
-    def __init__(self, device):
+    def __init__(self, device, parseq_checkpoint: Path | None = None):
         self.device = device
-        self.parseq = ParseqOCR(device=device)
+        self.parseq = ParseqOCR(device=device, checkpoint_path=parseq_checkpoint)
         self.trocr = TrOCR_OCR(device=device)
 
     @staticmethod
@@ -448,6 +514,7 @@ def run(
     ocr_batch_size: int,
     ocr_engine: str = "parseq",
     debug_crops_dir: Path | None = None,
+    parseq_checkpoint: Path | None = None,
 ):
     device = pick_device()
     print(f"Device: {device}")
@@ -471,9 +538,9 @@ def run(
     if ocr_engine == "trocr":
         ocr = TrOCR_OCR(device=device)
     elif ocr_engine == "together":
-        ocr = TogetherOCR(device=device)
+        ocr = TogetherOCR(device=device, parseq_checkpoint=parseq_checkpoint)
     else:
-        ocr = ParseqOCR(device=device)
+        ocr = ParseqOCR(device=device, checkpoint_path=parseq_checkpoint)
     print(f"OCR engine: {ocr_engine}")
 
     if debug_crops_dir is not None:
@@ -734,6 +801,13 @@ def main():
                    help="If set, save every OCR'd crop into "
                         "<dir>/numbers/ and <dir>/names/ with a filename "
                         "encoding track_id, frame, OCR result and confidence.")
+    p.add_argument("--parseq-checkpoint", type=str, default=None,
+                   help="Path to a custom PARSeq checkpoint (Lightning .pt). "
+                        "Applies to --ocr-engine parseq and the parseq side "
+                        "of --ocr-engine together. Default = baudm/parseq "
+                        "pretrained on STR. Use models/parseq_hockey.pt for "
+                        "Maria Koshkina's hockey-fine-tuned variant "
+                        "(non-commercial license — see her repo).")
     args = p.parse_args()
 
     tracks_json = Path(args.tracks_json)
@@ -741,6 +815,8 @@ def main():
     output = (Path(args.output) if args.output
               else tracks_json.with_name("tracks_identified.json"))
     debug_dir = Path(args.debug_crops_dir) if args.debug_crops_dir else None
+    parseq_ckpt = (Path(args.parseq_checkpoint)
+                   if args.parseq_checkpoint else None)
 
     run(
         tracks_json, video, output,
@@ -748,6 +824,7 @@ def main():
         args.pose_imgsz, args.ocr_batch,
         ocr_engine=args.ocr_engine,
         debug_crops_dir=debug_dir,
+        parseq_checkpoint=parseq_ckpt,
     )
 
 
