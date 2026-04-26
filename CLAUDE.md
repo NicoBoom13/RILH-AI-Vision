@@ -12,16 +12,34 @@ analytics. Built from open-source modules + custom code only.
   available). Match-mode default = max 1 puck per frame; pass
   `--training-mode` to lift that.
 - **Stage 1.b (Teams)** ✅ : team clustering via pose-based torso crop
-  (YOLO pose shoulders→hips, bbox-fallback for dark jerseys) +
-  multi-point dominant color averaging (3×2 grid) + per-crop k=2
-  k-means (fit on skaters only, goalies classified post-hoc). HSV by
-  default. `is_goaltender` per track via majority threshold (>50 % of
-  detections tagged `goaltender`). User-validated on run12 as
-  "practically perfect" except referees (HockeyAI mislabels them
-  'player' on roller — can't filter by class_name) and the Pont de Metz
-  goalie (white pads → classified pale). Improvement needs position-
-  based assignment (waits for Phase 2 rink calibration) or custom
-  goalie sampling — deferred.
+  (YOLO pose shoulders→hips, bbox-fallback for dark jerseys). Engine
+  pluggable via `--team-engine`:
+  - `hsv` (default) — multi-point dominant color averaging (3×2 grid)
+    + per-crop k=2 k-means (HSV space). User-validated as "practically
+    perfect" on run12 except referees (HockeyAI mislabels them 'player'
+    on roller — can't filter by class_name) and dark-vs-dark teams
+    (France-Monde plateau — k-means can't separate dark-blue from
+    dark-green torsos with colour alone).
+  - `osnet` — k=2 on per-track OSNet x0_25 medoid embeddings (same
+    model Stage 3.a uses for entity Re-ID). Captures pattern + colour,
+    so it tends to beat HSV on similar-coloured teams.
+  - `siglip` — Roboflow recipe: SigLIP encoder → mean-pool → UMAP-3D
+    → k-means k=2. Heaviest engine (~370 MB checkpoint download on
+    first run) but zero training data required.
+  - `contrastive` — Koshkina 2021: small CNN trained with triplet loss
+    + 50 % grayscale aug on torso crops. Trained per-deployment via
+    `tools/finetune_contrastive_team.py`. Output checkpoint at
+    `models/contrastive_team_rilh.pt`. The grayscale augmentation is
+    the load-bearing trick that handles dark-vs-dark teams.
+  Plus an orthogonal `--ref-classifier` flag that loads a binary head
+  trained on `track_truth.json` (`tools/finetune_ref_classifier.py`,
+  output `models/ref_classifier_rilh.pt`) and tags each track with
+  `is_referee` + `ref_score` post-hoc, no matter which team engine ran.
+  `is_goaltender` per track still uses HockeyAI majority (>50 % of
+  detections tagged `goaltender`). The four engines can be benchmarked
+  side-by-side via `tools/bench_team_engines.py` against a truth set
+  produced by `tools/annotate_tracks.py`. The default stays `hsv` —
+  no behaviour change for existing pipelines until the user opts in.
 - **Stage 1.c (Numbers)** ✅ : per-track jersey-number OCR via **PARSeq
   Hockey + RILH fine-tune**. Single engine (PARSeq); the previous
   TrOCR / together engines were removed in the refactor — the digit
@@ -368,6 +386,29 @@ graphify-out/              — local 3D visualization (mostly gitignored;
 - `tools/smoke_parseq_hockey.py` — standalone smoke test that loads the
   Koshkina checkpoint into baudm/parseq architecture and predicts on N
   random annotated crops, printing a table of truth vs prediction.
+- `tools/annotate_tracks.py` — track-level (not crop-level) web UI for
+  the Stage 1.b team-engine bench. Walks every player track in N run
+  folders, shows up to 6 thumbnail crops, single-key shortcuts for
+  team A / team B / referee / not-a-player. Output:
+  `data/jersey_numbers/track_truth.json` with thumbnails cached under
+  `data/jersey_numbers/_track_thumbs/`.
+- `tools/bench_team_engines.py` — compares `hsv` / `osnet` / `siglip` /
+  `contrastive` (+ optional ref classifier) on existing run folders
+  using `track_truth.json`. Re-runs only Stage 1.b (detection is the
+  slow step and stays cached). Per-engine output saved as
+  `runs/runNN/p1_b_teams_<engine>.json` so the canonical
+  `p1_b_teams.json` is untouched. Produces
+  `runs/bench_team_engines_YYYYMMDD_HHMMSS/{results.json, summary.json,
+  summary.txt}`.
+- `tools/finetune_ref_classifier.py` — trains a 512→64→1 MLP head on
+  frozen OSNet x0_25 embeddings to classify referee vs non-referee
+  torso crops. Reads truth from `track_truth.json`, writes
+  `models/ref_classifier_rilh.pt`. Track-level negatives = team A/B
+  positives (X tracks excluded as noisy negatives).
+- `tools/finetune_contrastive_team.py` — Koshkina 2021 small CNN
+  (3 conv + 2 FC, 128-d L2-normalised output) trained with triplet
+  loss + 50 % grayscale augmentation (the load-bearing trick for
+  similar-coloured teams). Writes `models/contrastive_team_rilh.pt`.
 
 ## Visualization (`graphify-out/` — local-only)
 3D interactive knowledge graph of the pipeline (~225 nodes, ~325
@@ -396,6 +437,18 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
+- **2026-04-27 team-engine plumbing** — Stage 1.b refactored to support
+  pluggable team engines (`--team-engine {hsv,osnet,siglip,contrastive}`)
+  + an orthogonal `--ref-classifier` flag. Default stays `hsv` so every
+  prior run reproduces unchanged. Three new engines shipped wired-up;
+  the contrastive engine needs `models/contrastive_team_rilh.pt`
+  (trained via `tools/finetune_contrastive_team.py` from the truth set
+  produced by `tools/annotate_tracks.py`). Bench harness
+  `tools/bench_team_engines.py` re-runs only Stage 1.b (detections
+  stay cached) and writes engine-tagged `p1_b_teams_<engine>.json` so
+  no canonical output is overwritten. Scoring is permutation-invariant
+  per Koshkina 2021. Pending the user's annotation pass + the bench
+  run; numbers will land in this log when they're in.
 - **2026-04-26 restructure** — phase numbering rewritten so the
   pipeline reads in causal order: detection → rink → entity → events
   → stats. **Phase 2 (Virtual follow-cam) removed** (output wasn't
@@ -525,16 +578,19 @@ multi-semaines (Phase 4+ et plateformes externes), voir la "Roadmap" en dessous.
   ~10-20 % supplémentaire (overlap GPU/CPU). — S
 
 ### Phase 1 / Phase 3 — Court-moyen terme
-- **Fix team classification Stage 1.b** : sur run15, 6 tracks/435 mal
-  classés avec `vote_confidence` 0.50–1.00 (donc le k-means capture la
-  mauvaise couleur, pas un floor issue). Pistes par effort croissant :
-  (a) augmenter `--samples-per-track` 8 → 20 ;
-  (b) vote temporel entité-level (mode des `team_id` des membres au lieu
-  de `next(iter(team_ids))` non-déterministe) ;
-  (c) seeder centroïdes sur joueurs OCR-confiants ;
-  (d) fine-tune classifieur team. — M–L
-- **Vote temporel team entité-level seul** (option b ci-dessus) comme
-  quick-win avant le fix complet. — S
+- **Annoter `track_truth.json` sur run24-run29** via `tools/annotate_tracks.py`
+  (UI localhost, ~250 tracks à passer en A/B/Ref/X) puis lancer
+  `tools/bench_team_engines.py` pour comparer hsv / osnet / siglip / contrastive
+  + ref classifier. Donne la première mesure factuelle sur **nos** vidéos
+  pour décider quel engine devient le défaut Stage 1.b. — S
+- **Train `models/ref_classifier_rilh.pt`** une fois track_truth.json existe
+  (`tools/finetune_ref_classifier.py`). Solve le ref-leak indépendamment
+  de Phase 2. — XS (entraînement) après l'annotation
+- **Train `models/contrastive_team_rilh.pt`** sur le même truth set
+  (`tools/finetune_contrastive_team.py`, ~30 epochs CPU). — S
+- **Vote temporel team entité-level seul** comme quick-win complémentaire :
+  mode des `team_id` des membres d'une entité au lieu de
+  `next(iter(team_ids))` non-déterministe. — S
 - **WBF (Weighted Boxes Fusion)** ensemble palet HockeyAI + détecteur
   dédié (style sieve-data). Gain attendu couverture palet 42% → 55–65%.
   Plus utile *après* fine-tune Phase 4. — M

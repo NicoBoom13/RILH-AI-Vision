@@ -705,12 +705,175 @@ class SigLIPEngine(TeamEngine):
 
 
 class ContrastiveEngine(TeamEngine):
+    """Koshkina 2021 — small CNN trained with triplet loss + 50 %
+    grayscale augmentation on torso crops, so the embedding learns
+    configural cues (jersey shape / pattern) instead of just colour.
+    The trained checkpoint is produced by
+    tools/finetune_contrastive_team.py and loaded here at inference.
+
+    Inference pipeline: for every crop of every track, preprocess the
+    same way the trainer did (letterbox to 64×128, per-channel intensity
+    stretch, NO grayscale at inference), embed with the small CNN, then
+    take the per-track L2-medoid. Skater medoids drive a k=2 k-means;
+    goalies + low-confidence tracks classified post-hoc against the
+    centroids — same shape as the OSNet engine, just a different
+    embedding space optimised explicitly for team separation."""
     name = "contrastive"
     needs_torso_crops = True
+
     def __init__(self, checkpoint_path=None):
-        self.checkpoint_path = checkpoint_path
+        self.checkpoint_path = (Path(checkpoint_path)
+                                if checkpoint_path
+                                else Path("models/contrastive_team_rilh.pt"))
+        self._model = None
+        self._device = None
+        self._crop_size = (64, 128)   # (W, H) — overridden by checkpoint meta
+
+    def _load(self):
+        if self._model is not None:
+            return self._model
+        if not self.checkpoint_path.exists():
+            raise SystemExit(
+                f"Contrastive checkpoint not found: {self.checkpoint_path}\n"
+                f"Train it first via tools/finetune_contrastive_team.py")
+        payload = torch.load(str(self.checkpoint_path),
+                             map_location="cpu", weights_only=False)
+        arch = payload.get("arch", {})
+        # Re-build the architecture from tools/finetune_contrastive_team.py
+        # locally to avoid an import cycle (tools/ depends on src/, not the
+        # other way around).
+        import torch.nn as nn
+        import torch.nn.functional as F
+
+        class ContrastiveTeamNet(nn.Module):
+            def __init__(self, emb_dim):
+                super().__init__()
+                self.features = nn.Sequential(
+                    nn.Conv2d(3, 16, 3, padding=1), nn.ReLU(inplace=True),
+                    nn.MaxPool2d(2),
+                    nn.Conv2d(16, 32, 3, padding=1), nn.ReLU(inplace=True),
+                    nn.MaxPool2d(2),
+                    nn.Conv2d(32, 64, 3, padding=1), nn.ReLU(inplace=True),
+                    nn.AdaptiveAvgPool2d((4, 2)),
+                )
+                self.head = nn.Sequential(
+                    nn.Flatten(),
+                    nn.Linear(64 * 4 * 2, 256), nn.ReLU(inplace=True),
+                    nn.Dropout(0.0),
+                    nn.Linear(256, emb_dim),
+                )
+            def forward(self, x):
+                z = self.head(self.features(x))
+                return F.normalize(z, p=2, dim=1)
+
+        self._model = ContrastiveTeamNet(arch.get("emb_dim", 128))
+        self._model.load_state_dict(payload["state_dict"])
+        self._model.eval()
+        self._device = pick_device()
+        self._model = self._model.to(self._device)
+        self._crop_size = (arch.get("crop_w", 64), arch.get("crop_h", 128))
+        return self._model
+
+    def _preprocess(self, bgr):
+        """Mirror tools/finetune_contrastive_team.py's preprocess: letterbox
+        + per-channel intensity stretch. Inference is always full-colour
+        (no grayscale aug)."""
+        crop_w, crop_h = self._crop_size
+        h, w = bgr.shape[:2]
+        cur_ar = w / max(h, 1)
+        target_ar = crop_w / crop_h
+        if cur_ar > target_ar:
+            new_w, new_h = crop_w, max(1, int(crop_w / cur_ar))
+        else:
+            new_w, new_h = max(1, int(crop_h * cur_ar)), crop_h
+        resized = cv2.resize(bgr, (new_w, new_h))
+        canvas = np.zeros((crop_h, crop_w, 3), dtype=np.uint8)
+        yy, xx = (crop_h - new_h) // 2, (crop_w - new_w) // 2
+        canvas[yy:yy + new_h, xx:xx + new_w] = resized
+
+        arr = canvas.astype(np.float32)
+        for ci in range(3):
+            c = arr[..., ci]
+            lo, hi = float(c.min()), float(c.max())
+            if hi - lo > 1e-3:
+                arr[..., ci] = (c - lo) * (255.0 / (hi - lo))
+        arr = arr / 255.0
+        arr = arr.transpose(2, 0, 1)
+        return torch.from_numpy(arr).float()
+
+    def _medoid(self, feats):
+        if len(feats) == 0:
+            return None
+        arr = np.stack(feats)
+        sim = arr @ arr.T
+        return arr[int(np.argmax(sim.sum(axis=1)))]
+
     def cluster_tracks(self, samples_by_tid, fit_tids):
-        raise NotImplementedError("Contrastive engine: pending later commit")
+        model = self._load()
+
+        emb_by_tid = {}
+        for tid, info in samples_by_tid.items():
+            crops = [c for c in info.get("torso_crops", []) if c is not None]
+            if not crops:
+                continue
+            tensors = torch.stack([self._preprocess(c) for c in crops]).to(self._device)
+            with torch.no_grad():
+                feats = model(tensors).cpu().numpy()
+            med = self._medoid(feats)
+            if med is not None:
+                emb_by_tid[tid] = med
+
+        if not emb_by_tid:
+            empty_of = {tid: 0 for tid in samples_by_tid}
+            empty_votes = {tid: [len(d["crop_colors"]), 0]
+                           for tid, d in samples_by_tid.items()}
+            return empty_of, [(128, 128, 128), (128, 128, 128)], empty_votes, 0.0
+
+        fit_tid_list = sorted([t for t in fit_tids if t in emb_by_tid])
+        if len(fit_tid_list) < 2:
+            fit_tid_list = sorted(emb_by_tid.keys())
+        fit_X = np.stack([emb_by_tid[t] for t in fit_tid_list]).astype(np.float32)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+        _, fit_labels, centers = cv2.kmeans(
+            fit_X, 2, None, criteria, 10, cv2.KMEANS_PP_CENTERS,
+        )
+        fit_labels = fit_labels.flatten()
+
+        all_tids = sorted(emb_by_tid.keys())
+        all_X = np.stack([emb_by_tid[t] for t in all_tids]).astype(np.float32)
+        dists = ((all_X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        all_labels = dists.argmin(axis=1)
+        team_of = {t: int(lbl) for t, lbl in zip(all_tids, all_labels)}
+        for tid in samples_by_tid:
+            team_of.setdefault(tid, 0)
+
+        votes_by_tid = {tid: [0, 0] for tid in samples_by_tid}
+        for tid in samples_by_tid:
+            if tid in all_tids:
+                votes_by_tid[tid][team_of[tid]] = max(
+                    1, len(samples_by_tid[tid]["crop_colors"]))
+
+        team_centers = []
+        for ci in range(2):
+            colours = []
+            for tid in fit_tid_list:
+                if team_of.get(tid) == ci:
+                    colours.extend(samples_by_tid[tid]["crop_colors"])
+            if colours:
+                arr = np.array(colours, dtype=np.float32)
+                team_centers.append(tuple(int(c) for c in arr.mean(axis=0)))
+            else:
+                team_centers.append((128, 128, 128))
+
+        inter = float(np.linalg.norm(centers[0] - centers[1]))
+        spreads = []
+        for ci in range(2):
+            pts = fit_X[fit_labels == ci]
+            if len(pts) > 0:
+                spreads.append(float(np.mean(np.linalg.norm(
+                    pts - centers[ci], axis=1))))
+        margin = inter / (float(np.mean(spreads)) + 1e-6) if spreads else 0.0
+        return team_of, team_centers, votes_by_tid, margin
 
 
 TEAM_ENGINES = {
@@ -720,6 +883,54 @@ TEAM_ENGINES = {
     "contrastive": lambda args: ContrastiveEngine(
                        checkpoint_path=args.contrastive_checkpoint),
 }
+
+
+def apply_ref_classifier(samples_by_tid, ckpt_path):
+    """Post-process the team engine's output: tag each track with an
+    `is_referee` flag using a small MLP head trained on OSNet
+    embeddings (see tools/finetune_ref_classifier.py). Per-track vote
+    is the mean sigmoid score over the track's crops; threshold 0.5.
+    Returns ``{tid: {"is_referee": bool, "ref_score": float}}``.
+    Tracks with no usable torso crops get is_referee=False, score=0.0.
+    """
+    import torch.nn as nn
+    payload = torch.load(str(ckpt_path), map_location="cpu", weights_only=False)
+    arch = payload["arch"]
+
+    class RefHead(nn.Module):
+        def __init__(self, emb_dim, hidden):
+            super().__init__()
+            self.fc1 = nn.Linear(emb_dim, hidden)
+            self.fc2 = nn.Linear(hidden, 1)
+            self.drop = nn.Dropout(0.0)   # eval-only — drop is identity
+        def forward(self, x):
+            return self.fc2(self.drop(torch.relu(self.fc1(x)))).squeeze(-1)
+
+    model = RefHead(arch["emb_dim"], arch["hidden"])
+    model.load_state_dict(payload["state_dict"])
+    model.eval()
+
+    from torchreid.reid.utils import FeatureExtractor
+    extractor = FeatureExtractor(
+        model_name="osnet_x0_25", model_path="", device=pick_device(),
+    )
+
+    out = {}
+    for tid, info in samples_by_tid.items():
+        crops = [c for c in info.get("torso_crops", []) if c is not None]
+        if not crops:
+            out[tid] = {"is_referee": False, "ref_score": 0.0}
+            continue
+        with torch.no_grad():
+            feats = extractor(crops).cpu().numpy()
+        feats = feats / np.maximum(np.linalg.norm(feats, axis=1, keepdims=True), 1e-9)
+        with torch.no_grad():
+            logits = model(torch.from_numpy(feats.astype(np.float32)))
+            scores = torch.sigmoid(logits).numpy()
+        mean_score = float(scores.mean())
+        out[tid] = {"is_referee": bool(mean_score > 0.5),
+                    "ref_score": mean_score}
+    return out
 
 
 def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
@@ -775,7 +986,8 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
 
 
 def run(detections_json, video_path, output, samples_per_track, pose_model_name,
-        pose_imgsz, preview_cols, space, multi_grid, engine):
+        pose_imgsz, preview_cols, space, multi_grid, engine,
+        ref_classifier_path=None):
     """Run the team-classification pipeline end-to-end.
 
     Loads ``p1_a_detections.json``, samples crops from the source video,
@@ -822,6 +1034,30 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         crops_by_tid, fit_tids,
     )
 
+    # Optional referee binary classifier — post-hoc, orthogonal to the
+    # team engine. Tags each track with is_referee + ref_score.
+    ref_results = {}
+    if ref_classifier_path is not None:
+        if not engine.needs_torso_crops:
+            # The HSV engine doesn't keep torso crops by default. Re-sample
+            # them so the classifier has something to look at; cheap given
+            # we already loaded the pose model + decoded the frames once.
+            print(f"Re-sampling torso crops for ref classifier "
+                  f"(engine {engine.name} didn't keep them)…")
+            crops_by_tid_with_torso = sample_jersey_colors(
+                detections_data, video_path, pose_model, device,
+                samples_per_track, pose_imgsz, multi_grid,
+                keep_torso_crops=True,
+            )
+        else:
+            crops_by_tid_with_torso = crops_by_tid
+        print(f"Running ref classifier ({ref_classifier_path})…")
+        ref_results = apply_ref_classifier(
+            crops_by_tid_with_torso, ref_classifier_path,
+        )
+        n_refs = sum(1 for r in ref_results.values() if r["is_referee"])
+        print(f"  Tagged {n_refs}/{len(ref_results)} tracks as referee")
+
     n0 = sum(1 for t in team_of.values() if t == 0)
     n1 = sum(1 for t in team_of.values() if t == 1)
     low_conf = 0
@@ -856,6 +1092,7 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         ),
         "team_centers_bgr": [list(c) for c in centers],
         "cluster_margin": margin,
+        "ref_classifier": str(ref_classifier_path) if ref_classifier_path else None,
         "tracks": {
             str(tid): {
                 "team_id": team_of[tid],
@@ -866,6 +1103,8 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
                 ),
                 "n_color_samples": len(crops_by_tid[tid]["crop_colors"]),
                 "is_goaltender": tid in goalie_tids,
+                "is_referee": ref_results.get(tid, {}).get("is_referee", False),
+                "ref_score": ref_results.get(tid, {}).get("ref_score", 0.0),
             }
             for tid in crops_by_tid
         },
@@ -921,6 +1160,12 @@ def main():
                    help="Path to a contrastive-team checkpoint (used only when "
                         "--team-engine contrastive). Default location: "
                         "models/contrastive_team_rilh.pt")
+    p.add_argument("--ref-classifier", type=str, default=None,
+                   help="Optional path to a referee binary classifier "
+                        "(produced by tools/finetune_ref_classifier.py). When "
+                        "set, every track is tagged with is_referee + "
+                        "ref_score in p1_b_teams.json. Orthogonal to "
+                        "--team-engine — runs after the team clustering.")
     args = p.parse_args()
 
     try:
@@ -937,7 +1182,8 @@ def main():
 
     run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,
-        args.preview_cols, args.space, (rows, cols), engine)
+        args.preview_cols, args.space, (rows, cols), engine,
+        ref_classifier_path=Path(args.ref_classifier) if args.ref_classifier else None)
 
 
 if __name__ == "__main__":

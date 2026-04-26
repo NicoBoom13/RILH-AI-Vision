@@ -54,12 +54,14 @@ SRC = PROJECT_ROOT / "src"
 
 
 def run_engine_on_clip(engine, run_dir, video_path, contrastive_ckpt,
-                       force=False):
+                       ref_classifier=None, force=False):
     """Re-run Stage 1.b on a single clip with the given engine. Saves
-    p1_b_teams_<engine>.json so each engine's output coexists in the
-    same run folder, leaving the canonical p1_b_teams.json untouched.
-    Returns the output path."""
-    out = run_dir / f"p1_b_teams_{engine}.json"
+    p1_b_teams_<engine>.json (or p1_b_teams_<engine>_ref.json when the
+    ref classifier is also enabled) so each variant's output coexists
+    in the same run folder, leaving the canonical p1_b_teams.json
+    untouched. Returns the output path."""
+    suffix = "_ref" if ref_classifier else ""
+    out = run_dir / f"p1_b_teams_{engine}{suffix}.json"
     if out.exists() and not force:
         return out
     cmd = [sys.executable, "-u", str(SRC / "p1_b_teams.py"),
@@ -69,6 +71,8 @@ def run_engine_on_clip(engine, run_dir, video_path, contrastive_ckpt,
            "--team-engine", engine]
     if engine == "contrastive" and contrastive_ckpt:
         cmd.extend(["--contrastive-checkpoint", str(contrastive_ckpt)])
+    if ref_classifier:
+        cmd.extend(["--ref-classifier", str(ref_classifier)])
     print(f"  $ {' '.join(cmd)}")
     rc = subprocess.run(cmd).returncode
     if rc != 0:
@@ -144,6 +148,10 @@ def main():
                    default=["hsv", "osnet", "siglip"],
                    choices=["hsv", "osnet", "siglip", "contrastive"])
     p.add_argument("--contrastive-checkpoint", type=str, default=None)
+    p.add_argument("--ref-classifier", type=str, default=None,
+                   help="When set, every engine is run twice (with and "
+                        "without the ref classifier) so the bench reports "
+                        "the marginal lift of the ref tag.")
     p.add_argument("--truth", type=str,
                    default="data/jersey_numbers/track_truth.json")
     p.add_argument("--video-root", type=str, default="videos")
@@ -185,13 +193,16 @@ def main():
             print(f"  WARN: no video for {r.name} — skipping")
             continue
         for eng in args.engines:
-            print(f"\n[{eng}] {r.name}")
-            try:
-                pred_paths[(eng, r.name)] = run_engine_on_clip(
-                    eng, r, video, args.contrastive_checkpoint, force=args.force,
-                )
-            except Exception as e:
-                print(f"  FAIL: {e}")
+            for ref in (None, args.ref_classifier) if args.ref_classifier else (None,):
+                tag = f"{eng}{'+ref' if ref else ''}"
+                print(f"\n[{tag}] {r.name}")
+                try:
+                    pred_paths[(tag, r.name)] = run_engine_on_clip(
+                        eng, r, video, args.contrastive_checkpoint,
+                        ref_classifier=ref, force=args.force,
+                    )
+                except Exception as e:
+                    print(f"  FAIL: {e}")
 
     # 2) Score each (engine, clip) pair.
     per_clip = defaultdict(dict)   # engine → clip → metrics
@@ -235,28 +246,26 @@ def main():
     lines.append(f"Clips: {', '.join(r.name for r in run_dirs)}")
     lines.append("=" * 78)
     lines.append("")
-    lines.append(f"{'engine':12s} {'team_acc':>10s} {'n_tracks':>10s} "
+    lines.append(f"{'engine':14s} {'team_acc':>10s} {'n_tracks':>10s} "
                  f"{'ref_recall':>11s} {'ref_prec':>10s}")
     lines.append("-" * 78)
-    for eng in args.engines:
-        if eng not in summary:
-            lines.append(f"{eng:12s} (no results — engine failed or not run)")
-            continue
+    engine_tags = list(summary.keys())
+    for eng in engine_tags:
         s = summary[eng]
         rr = f"{s['ref_recall_mean']:.3f}" if s['ref_recall_mean'] is not None else "  —  "
         rp = f"{s['ref_precision_mean']:.3f}" if s['ref_precision_mean'] is not None else "  —  "
-        lines.append(f"{eng:12s} {s['team_accuracy_weighted']:>10.3f} "
+        lines.append(f"{eng:14s} {s['team_accuracy_weighted']:>10.3f} "
                      f"{s['n_team_tracks']:>10d} {rr:>11s} {rp:>10s}")
     lines.append("")
     lines.append("Per-clip team accuracy:")
     clips_seen = sorted({c for s in summary.values() for c in s["per_clip"]})
-    header = f"  {'clip':14s}" + "".join(f"{e:>10s}" for e in args.engines)
+    header = f"  {'clip':14s}" + "".join(f"{e:>14s}" for e in engine_tags)
     lines.append(header)
     for clip in clips_seen:
         row = f"  {clip:14s}"
-        for e in args.engines:
+        for e in engine_tags:
             s = summary.get(e, {}).get("per_clip", {}).get(clip)
-            row += f"{s['team_accuracy']:>10.3f}" if s else f"{'—':>10s}"
+            row += f"{s['team_accuracy']:>14.3f}" if s else f"{'—':>14s}"
         lines.append(row)
     lines.append("")
     text = "\n".join(lines)
