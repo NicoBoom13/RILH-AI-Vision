@@ -238,9 +238,18 @@ def stream_needed_frames(video_path, indices):
 
 
 def sample_jersey_colors(tracks_data, video_path, pose_model, device,
-                         samples_per_track, pose_imgsz, multi_grid):
-    """Extract per-crop colors for each track via pose + multi-point averaging.
-    Returns {tid: {"crop_colors": [(b,g,r), ...], "preview_crop": ndarray}}.
+                         samples_per_track, pose_imgsz, multi_grid,
+                         keep_torso_crops=False):
+    """Extract per-crop torso color samples for each track via pose +
+    multi-point averaging. When ``keep_torso_crops=True`` the raw BGR
+    torso ndarray for every kept sample is also returned alongside the
+    colour stat — needed by the embedding-based team engines (osnet,
+    siglip, contrastive) that consume pixels directly. The HSV engine
+    only needs ``crop_colors`` and ignores ``torso_crops``.
+
+    Returns ``{tid: {"crop_colors": [(b,g,r), ...],
+                     "torso_crops": [ndarray | None, ...],
+                     "preview_crop": ndarray}}``.
     Tracks with zero usable crops are omitted."""
     by_tid = group_detections_by_track(tracks_data)
     frame_work = defaultdict(list)  # frame_idx -> [(tid, xyxy)]
@@ -251,6 +260,7 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
     print(f"Unique frames to read: {len(needed)}")
 
     crops_by_tid = defaultdict(list)
+    torso_by_tid = defaultdict(list)
     preview_by_tid = {}
 
     n_total_samples = sum(len(v) for v in frame_work.values())
@@ -304,6 +314,8 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
             n_color_ok += 1
 
             crops_by_tid[tid].append(color)
+            if keep_torso_crops:
+                torso_by_tid[tid].append(torso)
             if tid not in preview_by_tid:
                 preview_by_tid[tid] = torso
 
@@ -316,6 +328,7 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
     for tid, colors in crops_by_tid.items():
         out[tid] = {
             "crop_colors": colors,
+            "torso_crops": torso_by_tid.get(tid, []) if keep_torso_crops else [],
             "preview_crop": preview_by_tid.get(tid),
         }
     return out
@@ -399,6 +412,194 @@ def classify_teams(crops_by_tid, k=2, space="hsv", fit_tids=None):
     return team_of, team_centers, votes_by_tid, margin
 
 
+# ---------------------------------------------------------------------------
+# Pluggable team engines
+# ---------------------------------------------------------------------------
+# Each engine takes the per-track sample dict (output of
+# `sample_jersey_colors`) and returns the same 4-tuple as the original
+# `classify_teams`:
+#     (team_of, team_centers_bgr, votes_by_tid, margin)
+# so the rest of the pipeline (preview rendering + JSON output) is
+# engine-agnostic. Add a new engine by subclassing TeamEngine and
+# registering it in TEAM_ENGINES below.
+class TeamEngine:
+    """Base class — `cluster_tracks` returns the standard 4-tuple.
+    `name` and `needs_torso_crops` drive the dispatcher in run()."""
+    name = "base"
+    needs_torso_crops = False
+    def cluster_tracks(self, samples_by_tid, fit_tids):
+        raise NotImplementedError
+
+
+class HSVEngine(TeamEngine):
+    """Default engine: per-crop k=2 k-means on dominant torso colours
+    (HSV by default; --space bgr also supported). Centroids fit on
+    skater crops only; goalies + low-confidence tracks classified
+    post-hoc against those centroids. Behaviour-equivalent to the
+    pre-refactor `classify_teams` call."""
+    name = "hsv"
+    needs_torso_crops = False
+    def __init__(self, space="hsv"):
+        self.space = space
+    def cluster_tracks(self, samples_by_tid, fit_tids):
+        return classify_teams(samples_by_tid, k=2, space=self.space,
+                              fit_tids=fit_tids)
+
+
+# Engines below are registered as stubs and wired up incrementally —
+# OSNet (next commit), SigLIP (after that), Contrastive (last). Each
+# raises a clear NotImplementedError until shipped so a `--team-engine`
+# typo doesn't silently fall back to HSV.
+class OSNetEngine(TeamEngine):
+    """OSNet x0_25 medoid embedding per track + k=2 k-means on the
+    skater medoids. Goalies + tracks below the fit set get classified
+    post-hoc against the resulting two centroids. Same OSNet model
+    Stage 3.a uses for entity Re-ID, but clustered at k=2 (team) here
+    instead of k≈12 (entity) there. Captures both colour and torso
+    pattern, so it tends to separate dark-vs-dark teams that a pure
+    HSV k-means struggles with."""
+    name = "osnet"
+    needs_torso_crops = True
+    OSNET_MODEL = "osnet_x0_25"
+
+    def __init__(self):
+        self._extractor = None
+
+    def _get_extractor(self):
+        # Lazy-load: importing torchreid pulls in tensorboard etc., so
+        # only do it when this engine is actually selected.
+        if self._extractor is None:
+            from torchreid.reid.utils import FeatureExtractor
+            self._extractor = FeatureExtractor(
+                model_name=self.OSNET_MODEL, model_path="",
+                device=pick_device(),
+            )
+        return self._extractor
+
+    def _medoid(self, feats):
+        if len(feats) == 0:
+            return None
+        arr = np.stack(feats)
+        arr = arr / np.maximum(np.linalg.norm(arr, axis=1, keepdims=True), 1e-9)
+        sim = arr @ arr.T
+        return arr[int(np.argmax(sim.sum(axis=1)))]
+
+    def cluster_tracks(self, samples_by_tid, fit_tids):
+        extractor = self._get_extractor()
+
+        # Per-track medoid embedding from the kept torso crops. Tracks
+        # whose torso_crops list is empty (rare — only happens if the
+        # caller forgot keep_torso_crops=True) are skipped.
+        emb_by_tid = {}
+        for tid, info in samples_by_tid.items():
+            crops = [c for c in info.get("torso_crops", []) if c is not None]
+            if not crops:
+                continue
+            with torch.no_grad():
+                feats = extractor(crops).cpu().numpy()
+            med = self._medoid(feats)
+            if med is not None:
+                emb_by_tid[tid] = med
+
+        if not emb_by_tid:
+            empty_of = {tid: 0 for tid in samples_by_tid}
+            empty_votes = {
+                tid: [len(d["crop_colors"]), 0]
+                for tid, d in samples_by_tid.items()
+            }
+            return empty_of, [(128, 128, 128), (128, 128, 128)], empty_votes, 0.0
+
+        fit_tid_list = sorted([t for t in fit_tids if t in emb_by_tid])
+        if len(fit_tid_list) < 2:
+            fit_tid_list = sorted(emb_by_tid.keys())
+
+        fit_X = np.stack([emb_by_tid[t] for t in fit_tid_list]).astype(np.float32)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+        _, fit_labels, centers = cv2.kmeans(
+            fit_X, 2, None, criteria, 10, cv2.KMEANS_PP_CENTERS,
+        )
+        fit_labels = fit_labels.flatten()
+
+        # Classify ALL tracks (incl. goalies) against the centroids.
+        all_tids = sorted(emb_by_tid.keys())
+        all_X = np.stack([emb_by_tid[t] for t in all_tids]).astype(np.float32)
+        dists = ((all_X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        all_labels = dists.argmin(axis=1)
+        team_of = {t: int(lbl) for t, lbl in zip(all_tids, all_labels)}
+
+        # Tracks with no usable embedding land in team 0 with zero confidence
+        # (consistent with the HSV engine's empty-vote shape).
+        for tid in samples_by_tid:
+            team_of.setdefault(tid, 0)
+
+        # Vote distribution for the JSON: derive a pseudo-vote count so
+        # downstream entity merging (Stage 3.a) can still apply its
+        # vote_confidence floor uniformly. Use 1.0 for the assigned team
+        # and 0.0 for the other when the track has an embedding;
+        # tracks without one get [0, 0].
+        votes_by_tid = {}
+        for tid in samples_by_tid:
+            v = [0, 0]
+            if tid in all_tids:
+                v[team_of[tid]] = max(1, len(samples_by_tid[tid]["crop_colors"]))
+            votes_by_tid[tid] = v
+
+        # Approximate the visual team centre by averaging the dominant
+        # colours of the tracks in each cluster — gives the preview PNG
+        # a recognisable swatch even though the engine itself didn't use
+        # the colour stat. Skater-only mean keeps goalie pads from
+        # pulling the swatch towards grey.
+        team_centers = []
+        for ci in range(2):
+            colours = []
+            for tid in fit_tid_list:
+                if team_of.get(tid) == ci:
+                    colours.extend(samples_by_tid[tid]["crop_colors"])
+            if colours:
+                arr = np.array(colours, dtype=np.float32)
+                team_centers.append(tuple(int(c) for c in arr.mean(axis=0)))
+            else:
+                team_centers.append((128, 128, 128))
+
+        # Margin = inter-centroid distance / mean intra-cluster spread,
+        # in OSNet embedding space. Comparable order-of-magnitude to the
+        # HSV engine's margin (both bounded ~0..3).
+        inter = float(np.linalg.norm(centers[0] - centers[1]))
+        spreads = []
+        for ci in range(2):
+            pts = fit_X[fit_labels == ci]
+            if len(pts) > 0:
+                spreads.append(float(np.mean(np.linalg.norm(
+                    pts - centers[ci], axis=1))))
+        margin = inter / (float(np.mean(spreads)) + 1e-6) if spreads else 0.0
+        return team_of, team_centers, votes_by_tid, margin
+
+
+class SigLIPEngine(TeamEngine):
+    name = "siglip"
+    needs_torso_crops = True
+    def cluster_tracks(self, samples_by_tid, fit_tids):
+        raise NotImplementedError("SigLIP engine: pending next commit")
+
+
+class ContrastiveEngine(TeamEngine):
+    name = "contrastive"
+    needs_torso_crops = True
+    def __init__(self, checkpoint_path=None):
+        self.checkpoint_path = checkpoint_path
+    def cluster_tracks(self, samples_by_tid, fit_tids):
+        raise NotImplementedError("Contrastive engine: pending later commit")
+
+
+TEAM_ENGINES = {
+    "hsv":         lambda args: HSVEngine(space=args.space),
+    "osnet":       lambda args: OSNetEngine(),
+    "siglip":      lambda args: SigLIPEngine(),
+    "contrastive": lambda args: ContrastiveEngine(
+                       checkpoint_path=args.contrastive_checkpoint),
+}
+
+
 def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
                    output_path, cols=10, thumb=80):
     """One row per team, sorted by vote confidence desc. Each tile shows the
@@ -452,16 +653,19 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
 
 
 def run(detections_json, video_path, output, samples_per_track, pose_model_name,
-        pose_imgsz, preview_cols, space, multi_grid):
+        pose_imgsz, preview_cols, space, multi_grid, engine):
     """Run the team-classification pipeline end-to-end.
 
     Loads ``p1_a_detections.json``, samples crops from the source video,
-    extracts dominant torso colors, fits a k=2 k-means on skater-only
-    crops (goalies are classified post-hoc against those centroids),
+    dispatches to the requested team engine (``engine.cluster_tracks``),
     and writes ``p1_b_teams.json`` plus a debug ``teams_preview.png``.
+    The engine sees both the dominant-colour stat (used by HSV) and the
+    raw torso BGR crops (used by embedding engines), set by
+    ``engine.needs_torso_crops``.
     """
     device = pick_device()
     print(f"Device: {device}")
+    print(f"Team engine: {engine.name}")
 
     detections_data = json.loads(detections_json.read_text())
     all_tids = {
@@ -483,16 +687,17 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
     crops_by_tid = sample_jersey_colors(
         detections_data, video_path, pose_model, device,
         samples_per_track, pose_imgsz, multi_grid,
+        keep_torso_crops=engine.needs_torso_crops,
     )
     n_crops = sum(len(v["crop_colors"]) for v in crops_by_tid.values())
     print(f"  colors extracted for {len(crops_by_tid)}/{len(all_tids)} tracks "
           f"({n_crops} crops total)")
 
     fit_tids = skater_tids & set(crops_by_tid.keys())
-    print(f"Clustering teams (k=2, {space.upper()}, per-crop k-means, "
-          f"fitting on {len(fit_tids)} skater tracks, classifying all)…")
-    team_of, centers, votes_by_tid, margin = classify_teams(
-        crops_by_tid, k=2, space=space, fit_tids=fit_tids,
+    print(f"Clustering teams ({engine.name}, fitting on {len(fit_tids)} "
+          f"skater tracks, classifying all)…")
+    team_of, centers, votes_by_tid, margin = engine.cluster_tracks(
+        crops_by_tid, fit_tids,
     )
 
     n0 = sum(1 for t in team_of.values() if t == 0)
@@ -517,8 +722,9 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
     out_json = {
         "source_detections": str(detections_json),
         "source_video": str(video_path),
-        "version": "v2",
-        "method": "pose_torso + multi_point_avg + per_crop_vote",
+        "version": "v3",
+        "method": f"pose_torso + engine={engine.name}",
+        "team_engine": engine.name,
         "samples_per_track": samples_per_track,
         "color_space": space,
         "multi_point_grid": list(multi_grid),
@@ -575,10 +781,24 @@ def main():
     p.add_argument("--pose-imgsz", type=int, default=1280)
     p.add_argument("--preview-cols", type=int, default=10)
     p.add_argument("--space", choices=["hsv", "bgr"], default="hsv",
-                   help="Color space for k-means (hsv default)")
+                   help="Color space for HSV-engine k-means (default hsv). "
+                        "Ignored by other engines.")
     p.add_argument("--grid", type=str, default="3x2",
                    help="Multi-point grid inside the torso (rows x cols). "
                         "3x2 = 6 sub-regions.")
+    p.add_argument("--team-engine", choices=list(TEAM_ENGINES.keys()),
+                   default="hsv",
+                   help="Team-classification backend. "
+                        "hsv: per-crop k-means on dominant torso colour (default, "
+                        "behaviour-equivalent to v2). "
+                        "osnet: k=2 on OSNet x0_25 medoid embeddings. "
+                        "siglip: SigLIP encode + UMAP + k-means (Roboflow recipe). "
+                        "contrastive: Koshkina-style triplet model "
+                        "(--contrastive-checkpoint required).")
+    p.add_argument("--contrastive-checkpoint", type=str, default=None,
+                   help="Path to a contrastive-team checkpoint (used only when "
+                        "--team-engine contrastive). Default location: "
+                        "models/contrastive_team_rilh.pt")
     args = p.parse_args()
 
     try:
@@ -591,9 +811,11 @@ def main():
     output = (Path(args.output) if args.output
               else detections_json.with_name("p1_b_teams.json"))
 
+    engine = TEAM_ENGINES[args.team_engine](args)
+
     run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,
-        args.preview_cols, args.space, (rows, cols))
+        args.preview_cols, args.space, (rows, cols), engine)
 
 
 if __name__ == "__main__":
