@@ -362,17 +362,21 @@ class State:
         return ""
 
     def _guess_video(self, run_dir: Path):
-        """Find the source mp4 referenced by p1_a_detections.json. Falls
-        back to a name match in `video_root` if the absolute path in the
-        JSON has moved."""
+        """Find the source mp4 referenced by p1_a_detections.json. The
+        field is `video` in the canonical schema (older runs may have
+        used `source_video`). Falls back to a name match in
+        `video_root` if the absolute path in the JSON has moved."""
         det = json.loads((run_dir / "p1_a_detections.json").read_text())
-        sv = det.get("source_video") or ""
+        sv = det.get("video") or det.get("source_video") or ""
         p = Path(sv)
-        if p.exists():
+        if p.exists() and p.is_file():
             return p
         # Try matching by basename inside videos/
-        candidates = list(self.video_root.glob(f"*{p.name}*"))
-        return candidates[0] if candidates else None
+        if p.name:
+            candidates = list(self.video_root.glob(f"*{p.name}*"))
+            if candidates:
+                return candidates[0]
+        return None
 
     def list_tracks(self):
         # Refresh labels from the persisted annotations on every list

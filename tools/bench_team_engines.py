@@ -132,13 +132,19 @@ def score_clip(pred, truth_for_clip):
 
 
 def find_video(run_dir, video_root):
+    """Resolve a run folder's source video. The detections JSON uses
+    the `video` key; older runs may carry `source_video`. Falls back to
+    a name match under `video_root` if the recorded absolute path moved."""
     det = json.loads((run_dir / "p1_a_detections.json").read_text())
-    sv = det.get("source_video") or ""
+    sv = det.get("video") or det.get("source_video") or ""
     p = Path(sv)
-    if p.exists():
+    if p.exists() and p.is_file():
         return p
-    candidates = list(Path(video_root).glob(f"*{p.name}*"))
-    return candidates[0] if candidates else None
+    if p.name:
+        candidates = list(Path(video_root).glob(f"*{p.name}*"))
+        if candidates:
+            return candidates[0]
+    return None
 
 
 def main():
