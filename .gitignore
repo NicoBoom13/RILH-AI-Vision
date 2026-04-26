@@ -22,8 +22,16 @@ videos/
 .idea/
 .DS_Store
 
-# Graphify visualization output (regeneratable via regen.py, kept local-only)
-graphify-out/
+# Graphify visualization — generated output is regeneratable via regen.py
+# and kept local-only; the hand-edited source files are versioned. Use
+# `graphify-out/*` (not `graphify-out/`) so the un-ignore patterns can
+# re-include individual source files (a directory exclusion would block
+# any negation underneath).
+graphify-out/*
+!graphify-out/regen.py
+!graphify-out/orchestration.json
+!graphify-out/style.css
+!graphify-out/REGEN.md
 
 # Per-machine Claude Code + direnv state
 .claude/

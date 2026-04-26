@@ -1,0 +1,938 @@
+{
+  "nodes": [
+    {
+      "id": "readme_p1",
+      "label": "Phase 1 \u2014 Detect & track",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p2",
+      "label": "Phase 2 \u2014 Virtual follow-cam (parked)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p3",
+      "label": "Phase 3 \u2014 Rink calibration (parked)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p4",
+      "label": "Phase 4 \u2014 Event detection (stub)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p5",
+      "label": "Phase 5 \u2014 Statistics creation (stub)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p6_web",
+      "label": "Phase 6 \u2014 Web platform (external)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p7_multicam",
+      "label": "Phase 7 \u2014 Multi-cam / live / mobile (external)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p1_a_detect",
+      "label": "Stage 1.a \u2014 Detect & track",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p1_b_teams",
+      "label": "Stage 1.b \u2014 Teams (k=2 colour)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p1_c_numbers",
+      "label": "Stage 1.c \u2014 Numbers (PARSeq OCR)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p1_d_entities",
+      "label": "Stage 1.d \u2014 Entities (OSNet Re-ID)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p1_e_annotate",
+      "label": "Stage 1.e \u2014 Annotate (final MP4)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p2_a_followcam",
+      "label": "Stage 2.a \u2014 Follow-cam render (parked)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p3_a_rink",
+      "label": "Stage 3.a \u2014 Rink keypoints (parked)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p4_a_events",
+      "label": "Stage 4.a \u2014 Events (STUB)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "readme_p5_a_stats",
+      "label": "Stage 5.a \u2014 Stats (STUB)",
+      "file_type": "document",
+      "source_file": "README.md",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_detections_json",
+      "label": "p1_a_detections.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p1_a_detections.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_annotated_raw_mp4",
+      "label": "annotated_raw.mp4",
+      "file_type": "document",
+      "source_file": "runs/runNN/annotated_raw.mp4",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_teams_json",
+      "label": "p1_b_teams.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p1_b_teams.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_teams_preview_png",
+      "label": "teams_preview.png",
+      "file_type": "image",
+      "source_file": "runs/runNN/teams_preview.png",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_numbers_json",
+      "label": "p1_c_numbers.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p1_c_numbers.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_entities_json",
+      "label": "p1_d_entities.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p1_d_entities.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_annotated_mp4",
+      "label": "annotated.mp4",
+      "file_type": "document",
+      "source_file": "runs/runNN/annotated.mp4",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_followcam_mp4",
+      "label": "followcam.mp4",
+      "file_type": "document",
+      "source_file": "runs/runNN/followcam.mp4",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_rink_keypoints_json",
+      "label": "p3_a_rink_keypoints.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p3_a_rink_keypoints.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_p4_events_json",
+      "label": "p4_a_events.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p4_a_events.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "data_p5_stats_json",
+      "label": "p5_a_stats.json",
+      "file_type": "document",
+      "source_file": "runs/runNN/p5_a_stats.json",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "model_hockeyai",
+      "label": "HockeyAI YOLOv8m",
+      "file_type": "document",
+      "source_file": "models/HockeyAI_model_weight.pt",
+      "source_location": null,
+      "source_url": "https://huggingface.co/SimulaMet-HOST/HockeyAI",
+      "captured_at": null,
+      "author": "SimulaMet-HOST",
+      "contributor": null
+    },
+    {
+      "id": "model_hockeyrink",
+      "label": "HockeyRink keypoints",
+      "file_type": "document",
+      "source_file": "models/HockeyRink.pt",
+      "source_location": null,
+      "source_url": "https://huggingface.co/SimulaMet-HOST/HockeyRink",
+      "captured_at": null,
+      "author": "SimulaMet-HOST",
+      "contributor": null
+    },
+    {
+      "id": "model_yolo_coco",
+      "label": "YOLO11 / YOLO26 COCO",
+      "file_type": "document",
+      "source_file": "models/yolo11m.pt",
+      "source_location": null,
+      "source_url": "https://github.com/ultralytics/ultralytics",
+      "captured_at": null,
+      "author": "Ultralytics",
+      "contributor": null
+    },
+    {
+      "id": "model_yolo_pose",
+      "label": "YOLO pose (yolo26l-pose)",
+      "file_type": "document",
+      "source_file": "models/yolo26l-pose.pt",
+      "source_location": null,
+      "source_url": "https://github.com/ultralytics/ultralytics",
+      "captured_at": null,
+      "author": "Ultralytics",
+      "contributor": null
+    },
+    {
+      "id": "model_parseq_baudm",
+      "label": "PARSeq baudm pretrained",
+      "file_type": "document",
+      "source_file": null,
+      "source_location": null,
+      "source_url": "https://github.com/baudm/parseq",
+      "captured_at": null,
+      "author": "baudm",
+      "contributor": null
+    },
+    {
+      "id": "model_parseq_hockey_rilh",
+      "label": "PARSeq Hockey + RILH FT",
+      "file_type": "document",
+      "source_file": "models/parseq_hockey_rilh.pt",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": "RILH-AI-Vision",
+      "contributor": null
+    },
+    {
+      "id": "model_osnet",
+      "label": "OSNet x0_25 (Re-ID)",
+      "file_type": "document",
+      "source_file": null,
+      "source_location": null,
+      "source_url": "https://github.com/KaiyangZhou/deep-person-reid",
+      "captured_at": null,
+      "author": "torchreid",
+      "contributor": null
+    },
+    {
+      "id": "config_bytetrack",
+      "label": "bytetrack.yaml",
+      "file_type": "document",
+      "source_file": "configs/bytetrack.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_bytetrack_tuned",
+      "label": "bytetrack_tuned.yaml",
+      "file_type": "document",
+      "source_file": "configs/bytetrack_tuned.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    },
+    {
+      "id": "config_botsort_reid",
+      "label": "botsort_reid.yaml",
+      "file_type": "document",
+      "source_file": "configs/botsort_reid.yaml",
+      "source_location": null,
+      "source_url": null,
+      "captured_at": null,
+      "author": null,
+      "contributor": null
+    }
+  ],
+  "edges": [
+    {
+      "source": "readme_p1",
+      "target": "readme_p2",
+      "relation": "precedes",
+      "evidence_quote": "Pipeline runs Phase 1 \u2192 Phase 2 \u2192 ... \u2192 Phase 7",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p2",
+      "target": "readme_p3",
+      "relation": "precedes",
+      "evidence_quote": "Pipeline runs Phase 1 \u2192 Phase 2 \u2192 ... \u2192 Phase 7",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p3",
+      "target": "readme_p4",
+      "relation": "precedes",
+      "evidence_quote": "Pipeline runs Phase 1 \u2192 Phase 2 \u2192 ... \u2192 Phase 7",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p4",
+      "target": "readme_p5",
+      "relation": "precedes",
+      "evidence_quote": "Pipeline runs Phase 1 \u2192 Phase 2 \u2192 ... \u2192 Phase 7",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p5",
+      "target": "readme_p6_web",
+      "relation": "precedes",
+      "evidence_quote": "Logical pipeline continues to Phase 6 (external)",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "readme_p7_multicam",
+      "relation": "precedes",
+      "evidence_quote": "Logical pipeline continues to Phase 7 (external)",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1",
+      "target": "readme_p1_a_detect",
+      "relation": "implements",
+      "evidence_quote": "Phase 1 contains stage a",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1",
+      "target": "readme_p1_b_teams",
+      "relation": "implements",
+      "evidence_quote": "Phase 1 contains stage b",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1",
+      "target": "readme_p1_c_numbers",
+      "relation": "implements",
+      "evidence_quote": "Phase 1 contains stage c",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1",
+      "target": "readme_p1_d_entities",
+      "relation": "implements",
+      "evidence_quote": "Phase 1 contains stage d",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1",
+      "target": "readme_p1_e_annotate",
+      "relation": "implements",
+      "evidence_quote": "Phase 1 contains stage e",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p2",
+      "target": "readme_p2_a_followcam",
+      "relation": "implements",
+      "evidence_quote": "Phase 2 contains stage a",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p3",
+      "target": "readme_p3_a_rink",
+      "relation": "implements",
+      "evidence_quote": "Phase 3 contains stage a",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p4",
+      "target": "readme_p4_a_events",
+      "relation": "implements",
+      "evidence_quote": "Phase 4 contains stage a (stub)",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p5",
+      "target": "readme_p5_a_stats",
+      "relation": "implements",
+      "evidence_quote": "Phase 5 contains stage a (stub)",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1_a_detect",
+      "target": "readme_p1_b_teams",
+      "relation": "precedes",
+      "evidence_quote": "stages run a \u2192 b \u2192 c \u2192 d \u2192 e",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1_b_teams",
+      "target": "readme_p1_c_numbers",
+      "relation": "precedes",
+      "evidence_quote": "stages run a \u2192 b \u2192 c \u2192 d \u2192 e",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1_c_numbers",
+      "target": "readme_p1_d_entities",
+      "relation": "precedes",
+      "evidence_quote": "stages run a \u2192 b \u2192 c \u2192 d \u2192 e",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p1_d_entities",
+      "target": "readme_p1_e_annotate",
+      "relation": "precedes",
+      "evidence_quote": "stages run a \u2192 b \u2192 c \u2192 d \u2192 e",
+      "source_file": "README.md"
+    },
+    {
+      "source": "p1_a_detect_py",
+      "target": "readme_p1_a_detect",
+      "relation": "implements",
+      "evidence_quote": "src/p1_a_detect.py implements Stage 1.a",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "p1_b_teams_py",
+      "target": "readme_p1_b_teams",
+      "relation": "implements",
+      "evidence_quote": "src/p1_b_teams.py implements Stage 1.b",
+      "source_file": "src/p1_b_teams.py"
+    },
+    {
+      "source": "p1_c_numbers_py",
+      "target": "readme_p1_c_numbers",
+      "relation": "implements",
+      "evidence_quote": "src/p1_c_numbers.py implements Stage 1.c",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "p1_d_entities_py",
+      "target": "readme_p1_d_entities",
+      "relation": "implements",
+      "evidence_quote": "src/p1_d_entities.py implements Stage 1.d",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "p1_e_annotate_py",
+      "target": "readme_p1_e_annotate",
+      "relation": "implements",
+      "evidence_quote": "src/p1_e_annotate.py implements Stage 1.e",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "p2_a_followcam_py",
+      "target": "readme_p2_a_followcam",
+      "relation": "implements",
+      "evidence_quote": "src/p2_a_followcam.py implements Stage 2.a",
+      "source_file": "src/p2_a_followcam.py"
+    },
+    {
+      "source": "p3_a_rink_py",
+      "target": "readme_p3_a_rink",
+      "relation": "implements",
+      "evidence_quote": "src/p3_a_rink.py implements Stage 3.a",
+      "source_file": "src/p3_a_rink.py"
+    },
+    {
+      "source": "p4_a_events_py",
+      "target": "readme_p4_a_events",
+      "relation": "implements",
+      "evidence_quote": "src/p4_a_events.py implements Stage 4.a",
+      "source_file": "src/p4_a_events.py"
+    },
+    {
+      "source": "p5_a_stats_py",
+      "target": "readme_p5_a_stats",
+      "relation": "implements",
+      "evidence_quote": "src/p5_a_stats.py implements Stage 5.a",
+      "source_file": "src/p5_a_stats.py"
+    },
+    {
+      "source": "run_project_py",
+      "target": "readme_p1",
+      "relation": "configures",
+      "evidence_quote": "run_project.py launches Phase 1 stages a..e",
+      "source_file": "src/run_project.py"
+    },
+    {
+      "source": "run_project_py",
+      "target": "readme_p2",
+      "relation": "configures",
+      "evidence_quote": "run_project.py launches Phase 2 only when --run-p2 is passed (parked)",
+      "source_file": "src/run_project.py"
+    },
+    {
+      "source": "run_project_py",
+      "target": "readme_p3",
+      "relation": "configures",
+      "evidence_quote": "run_project.py launches Phase 3 (tolerant)",
+      "source_file": "src/run_project.py"
+    },
+    {
+      "source": "run_project_py",
+      "target": "readme_p4",
+      "relation": "configures",
+      "evidence_quote": "run_project.py launches Phase 4 stub",
+      "source_file": "src/run_project.py"
+    },
+    {
+      "source": "run_project_py",
+      "target": "readme_p5",
+      "relation": "configures",
+      "evidence_quote": "run_project.py launches Phase 5 stub",
+      "source_file": "src/run_project.py"
+    },
+    {
+      "source": "p1_a_detect_py",
+      "target": "data_detections_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_a_detect writes p1_a_detections.json + annotated.mp4",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "p1_a_detect_py",
+      "target": "data_annotated_raw_mp4",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_a_detect writes annotated_raw.mp4 (debug video with raw bboxes, IDs, traces)",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "data_annotated_mp4",
+      "target": "data_annotated_raw_mp4",
+      "relation": "references",
+      "evidence_quote": "annotated.mp4 is the enriched final version of the same frames that annotated_raw.mp4 shows in raw form (same source video, same p1_a_detections.json — annotated.mp4 layers team colours, jersey numbers, and entity merging on top)",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "p1_b_teams_py",
+      "target": "data_teams_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_b_teams writes p1_b_teams.json",
+      "source_file": "src/p1_b_teams.py"
+    },
+    {
+      "source": "p1_b_teams_py",
+      "target": "data_teams_preview_png",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_b_teams also writes teams_preview.png",
+      "source_file": "src/p1_b_teams.py"
+    },
+    {
+      "source": "p1_c_numbers_py",
+      "target": "data_numbers_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_c_numbers writes p1_c_numbers.json",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "p1_d_entities_py",
+      "target": "data_entities_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_d_entities writes p1_d_entities.json",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "p1_e_annotate_py",
+      "target": "data_annotated_mp4",
+      "relation": "feeds_into",
+      "evidence_quote": "p1_e_annotate writes annotated.mp4 (final)",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "p2_a_followcam_py",
+      "target": "data_followcam_mp4",
+      "relation": "feeds_into",
+      "evidence_quote": "p2_a_followcam writes followcam.mp4",
+      "source_file": "src/p2_a_followcam.py"
+    },
+    {
+      "source": "p3_a_rink_py",
+      "target": "data_rink_keypoints_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p3_a_rink writes p3_a_rink_keypoints.json (when transfer succeeds)",
+      "source_file": "src/p3_a_rink.py"
+    },
+    {
+      "source": "p4_a_events_py",
+      "target": "data_p4_events_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p4_a_events writes p4_a_events.json marker",
+      "source_file": "src/p4_a_events.py"
+    },
+    {
+      "source": "p5_a_stats_py",
+      "target": "data_p5_stats_json",
+      "relation": "feeds_into",
+      "evidence_quote": "p5_a_stats writes p5_a_stats.json marker",
+      "source_file": "src/p5_a_stats.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p1_b_teams_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_b_teams reads p1_a_detections.json",
+      "source_file": "src/p1_b_teams.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p1_c_numbers_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_c_numbers reads p1_a_detections.json",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p1_d_entities_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_d_entities reads p1_a_detections.json",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "data_teams_json",
+      "target": "p1_d_entities_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_d_entities reads p1_b_teams.json",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "data_numbers_json",
+      "target": "p1_d_entities_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_d_entities reads p1_c_numbers.json",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p1_e_annotate_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_e_annotate reads p1_a_detections.json",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "data_numbers_json",
+      "target": "p1_e_annotate_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_e_annotate reads p1_c_numbers.json",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "data_teams_json",
+      "target": "p1_e_annotate_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_e_annotate auto-discovers p1_b_teams.json",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "data_entities_json",
+      "target": "p1_e_annotate_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p1_e_annotate auto-discovers p1_d_entities.json",
+      "source_file": "src/p1_e_annotate.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p2_a_followcam_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p2_a_followcam reads p1_a_detections.json",
+      "source_file": "src/p2_a_followcam.py"
+    },
+    {
+      "source": "data_detections_json",
+      "target": "p4_a_events_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p4_a_events reads p1_a_detections.json (stub)",
+      "source_file": "src/p4_a_events.py"
+    },
+    {
+      "source": "data_entities_json",
+      "target": "p4_a_events_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p4_a_events reads p1_d_entities.json (stub)",
+      "source_file": "src/p4_a_events.py"
+    },
+    {
+      "source": "data_entities_json",
+      "target": "p5_a_stats_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p5_a_stats reads p1_d_entities.json (stub)",
+      "source_file": "src/p5_a_stats.py"
+    },
+    {
+      "source": "data_numbers_json",
+      "target": "p5_a_stats_py",
+      "relation": "consumes_output_of",
+      "evidence_quote": "p5_a_stats reads p1_c_numbers.json (stub)",
+      "source_file": "src/p5_a_stats.py"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "data_entities_json",
+      "relation": "consumes_output_of",
+      "evidence_quote": "Web platform consumes runs/runNN/p1_d_entities.json",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "data_annotated_mp4",
+      "relation": "consumes_output_of",
+      "evidence_quote": "Web platform serves runs/runNN/annotated.mp4",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "data_followcam_mp4",
+      "relation": "consumes_output_of",
+      "evidence_quote": "Web platform serves followcam.mp4 alongside the annotated MP4",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "data_p5_stats_json",
+      "relation": "consumes_output_of",
+      "evidence_quote": "Web platform reads p5_a_stats.json once Phase 5 ships",
+      "source_file": "README.md"
+    },
+    {
+      "source": "readme_p6_web",
+      "target": "data_p4_events_json",
+      "relation": "consumes_output_of",
+      "evidence_quote": "Web platform reads p4_a_events.json once Phase 4 ships",
+      "source_file": "README.md"
+    },
+    {
+      "source": "model_hockeyai",
+      "target": "p1_a_detect_py",
+      "relation": "implements",
+      "evidence_quote": "HockeyAI weights drive the detector backend",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "model_yolo_coco",
+      "target": "p1_a_detect_py",
+      "relation": "implements",
+      "evidence_quote": "YOLO11/26 COCO weights are the default detector backend",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "model_yolo_pose",
+      "target": "p1_b_teams_py",
+      "relation": "implements",
+      "evidence_quote": "YOLO pose model produces shoulder/hip keypoints for torso crops",
+      "source_file": "src/p1_b_teams.py"
+    },
+    {
+      "source": "model_yolo_pose",
+      "target": "p1_c_numbers_py",
+      "relation": "implements",
+      "evidence_quote": "YOLO pose drives the Koshkina-style dorsal crop",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "model_parseq_baudm",
+      "target": "p1_c_numbers_py",
+      "relation": "implements",
+      "evidence_quote": "Default OCR engine when --parseq-checkpoint is not given",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "model_parseq_hockey_rilh",
+      "target": "p1_c_numbers_py",
+      "relation": "implements",
+      "evidence_quote": "Custom RILH-fine-tuned PARSeq Hockey checkpoint",
+      "source_file": "src/p1_c_numbers.py"
+    },
+    {
+      "source": "model_osnet",
+      "target": "p1_d_entities_py",
+      "relation": "implements",
+      "evidence_quote": "OSNet x0_25 medoid embeddings drive the Re-ID merge",
+      "source_file": "src/p1_d_entities.py"
+    },
+    {
+      "source": "model_hockeyrink",
+      "target": "p3_a_rink_py",
+      "relation": "implements",
+      "evidence_quote": "HockeyRink weights are loaded by Stage 3.a",
+      "source_file": "src/p3_a_rink.py"
+    },
+    {
+      "source": "config_bytetrack",
+      "target": "p1_a_detect_py",
+      "relation": "configures",
+      "evidence_quote": "Default tracker config loaded by p1_a_detect",
+      "source_file": "src/p1_a_detect.py"
+    },
+    {
+      "source": "config_bytetrack_tuned",
+      "target": "p1_a_detect_py",
+      "relation": "configures",
+      "evidence_quote": "Tuned ByteTrack (track_buffer=180, match=0.9)",
+      "source_file": "configs/bytetrack_tuned.yaml"
+    },
+    {
+      "source": "config_botsort_reid",
+      "target": "p1_a_detect_py",
+      "relation": "configures",
+      "evidence_quote": "BoT-SORT + ReID + GMC alternative tracker",
+      "source_file": "configs/botsort_reid.yaml"
+    }
+  ]
+}
