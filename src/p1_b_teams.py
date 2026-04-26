@@ -576,10 +576,132 @@ class OSNetEngine(TeamEngine):
 
 
 class SigLIPEngine(TeamEngine):
+    """Roboflow-style team classifier: SigLIP vision encoder
+    (google/siglip-base-patch16-224, ~370 MB) → mean-pool patch
+    tokens → UMAP to 3-D (better-conditioned for k-means on a high-
+    dimensional manifold than raw pooled features) → k=2 k-means.
+    Centroids fit on skater crops only; goalies + low-confidence
+    tracks classified post-hoc against those centroids. Per-track
+    label = majority vote over the track's crops."""
     name = "siglip"
     needs_torso_crops = True
+    SIGLIP_ID = "google/siglip-base-patch16-224"
+    UMAP_DIM = 3
+
+    def __init__(self):
+        self._processor = None
+        self._model = None
+        self._device = None
+
+    def _get_model(self):
+        # Lazy-load to avoid the ~370 MB download when --team-engine
+        # is something else.
+        if self._model is None:
+            from transformers import AutoProcessor, SiglipVisionModel
+            self._device = pick_device()
+            self._processor = AutoProcessor.from_pretrained(self.SIGLIP_ID)
+            self._model = SiglipVisionModel.from_pretrained(
+                self.SIGLIP_ID).to(self._device).eval()
+        return self._processor, self._model, self._device
+
+    def _encode(self, crops_bgr):
+        from PIL import Image
+        processor, model, device = self._get_model()
+        # SigLIP wants RGB PIL Images. Convert in batches to keep peak
+        # memory bounded; OSNet's internal batching is already enough
+        # for our crop counts but SigLIP weights are larger.
+        feats = []
+        BATCH = 32
+        for i in range(0, len(crops_bgr), BATCH):
+            batch = [Image.fromarray(cv2.cvtColor(c, cv2.COLOR_BGR2RGB))
+                     for c in crops_bgr[i:i + BATCH] if c is not None]
+            if not batch:
+                continue
+            with torch.no_grad():
+                inputs = processor(images=batch, return_tensors="pt").to(device)
+                out = model(**inputs)
+                # last_hidden_state shape: (B, T, D) — mean-pool the
+                # T patch tokens, no CLS in SigLIP vision tower.
+                pooled = out.last_hidden_state.mean(dim=1).cpu().numpy()
+            feats.extend(pooled)
+        return np.stack(feats) if feats else np.zeros((0, 768), dtype=np.float32)
+
     def cluster_tracks(self, samples_by_tid, fit_tids):
-        raise NotImplementedError("SigLIP engine: pending next commit")
+        # Encode every kept crop; remember which (tid, idx) each row
+        # belongs to so we can majority-vote per track at the end.
+        all_crops = []
+        all_owners = []  # parallel list of tid
+        for tid, info in samples_by_tid.items():
+            for c in info.get("torso_crops", []):
+                if c is None:
+                    continue
+                all_crops.append(c)
+                all_owners.append(tid)
+        if not all_crops:
+            empty_of = {tid: 0 for tid in samples_by_tid}
+            empty_votes = {tid: [len(d["crop_colors"]), 0]
+                           for tid, d in samples_by_tid.items()}
+            return empty_of, [(128, 128, 128), (128, 128, 128)], empty_votes, 0.0
+
+        feats = self._encode(all_crops)
+
+        # UMAP to 3-D — Roboflow recipe. UMAP preserves local structure
+        # better than PCA on these high-dim semantic features.
+        try:
+            import umap
+            reducer = umap.UMAP(
+                n_components=self.UMAP_DIM, n_neighbors=15, min_dist=0.0,
+                random_state=0, metric="cosine",
+            )
+            X = reducer.fit_transform(feats)
+        except ImportError:
+            # Fall back to PCA if umap-learn isn't installed; the
+            # quality drops but the engine still runs.
+            from sklearn.decomposition import PCA
+            X = PCA(n_components=self.UMAP_DIM, random_state=0).fit_transform(feats)
+
+        X = X.astype(np.float32)
+
+        # Fit k=2 on skater crops only.
+        fit_mask = np.array([t in fit_tids for t in all_owners])
+        if fit_mask.sum() < 2:
+            fit_mask = np.ones(len(all_owners), dtype=bool)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.5)
+        _, _, centers = cv2.kmeans(
+            X[fit_mask], 2, None, criteria, 10, cv2.KMEANS_PP_CENTERS,
+        )
+        dists = ((X[:, None, :] - centers[None, :, :]) ** 2).sum(axis=2)
+        labels = dists.argmin(axis=1)
+
+        votes_by_tid = {tid: [0, 0] for tid in samples_by_tid}
+        for tid, lbl in zip(all_owners, labels):
+            votes_by_tid[tid][int(lbl)] += 1
+        team_of = {tid: int(np.argmax(v)) if sum(v) > 0 else 0
+                   for tid, v in votes_by_tid.items()}
+
+        # Visual swatches from the colour stat (same trick as OSNet).
+        team_centers = []
+        for ci in range(2):
+            colours = []
+            for tid in fit_tids:
+                if team_of.get(tid) == ci:
+                    colours.extend(samples_by_tid[tid]["crop_colors"])
+            if colours:
+                arr = np.array(colours, dtype=np.float32)
+                team_centers.append(tuple(int(c) for c in arr.mean(axis=0)))
+            else:
+                team_centers.append((128, 128, 128))
+
+        # Margin in the reduced space.
+        inter = float(np.linalg.norm(centers[0] - centers[1]))
+        spreads = []
+        for ci in range(2):
+            pts = X[fit_mask][labels[fit_mask] == ci]
+            if len(pts) > 0:
+                spreads.append(float(np.mean(np.linalg.norm(
+                    pts - centers[ci], axis=1))))
+        margin = inter / (float(np.mean(spreads)) + 1e-6) if spreads else 0.0
+        return team_of, team_centers, votes_by_tid, margin
 
 
 class ContrastiveEngine(TeamEngine):
