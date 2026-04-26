@@ -34,6 +34,24 @@ from graphify.build import build_from_json
 from graphify.cluster import cluster, score_all
 from graphify.export import to_json
 
+# Cache invalidation guard: graphify writes per-file caches under
+# graphify-out/cache/ AND emits a merged graph.json. When the user
+# edits orchestration.json (renames a phase, restructures stages, …)
+# the AST cache stays valid but the merged result is stale and the
+# rendered graph3d.html ends up showing old labels. Wipe both
+# graph.json and the AST cache whenever orchestration.json is newer
+# than graph.json, so the next run always reflects the source of truth.
+import shutil
+ORCH_PATH = OUT / 'orchestration.json'
+GRAPH_PATH = OUT / 'graph.json'
+CACHE_DIR = OUT / 'cache'
+if ORCH_PATH.exists() and GRAPH_PATH.exists():
+    if ORCH_PATH.stat().st_mtime > GRAPH_PATH.stat().st_mtime:
+        print(f'[0/4] orchestration.json newer than graph.json — wiping cache to force re-merge')
+        GRAPH_PATH.unlink(missing_ok=True)
+        if CACHE_DIR.is_dir():
+            shutil.rmtree(CACHE_DIR)
+
 print('[1/4] Detecting + extracting AST from src/...')
 det = detect(SRC)
 code_files = []
@@ -45,7 +63,6 @@ print(f'      AST: {len(ast["nodes"])} nodes, {len(ast["edges"])} edges')
 # ============================================================================
 # 2. Load orchestration layer (LLM-extracted, pre-saved)
 # ============================================================================
-ORCH_PATH = OUT / 'orchestration.json'
 if not ORCH_PATH.exists():
     sys.exit(f'ERROR: {ORCH_PATH} not found. Re-extract via subagent — see REGEN.md.')
 print(f'[2/4] Loading orchestration from {ORCH_PATH.name}...')
