@@ -1,20 +1,24 @@
 """
-RILH-AI-Vision — p1_d_entities
-Merge fragmented P1.a tracks into stable entities (one entity = one
+RILH-AI-Vision — p3_a_entities (Phase 3 stage a)
+Merge fragmented Phase 1 tracks into stable entities (one entity = one
 real player / goalie) via post-hoc Re-ID clustering.
 
-Inputs (three JSONs produced by earlier stages + the source video):
+Phase 3 follows Phase 2 (rink calibration) so that future versions can
+reject off-ice tracks geometrically before clustering. Today the rink
+constraint isn't applied yet — Phase 2 is being unblocked separately.
+
+Inputs (three JSONs produced by Phase 1 + the source video):
   - p1_a_detections.json   (p1_a_detect)
   - p1_b_teams.json        (p1_b_teams)        — team_id + vote_conf
   - p1_c_numbers.json      (p1_c_numbers)      — OCR jersey number
   - video.mp4                                — for embedding crops
 
-Output: p1_d_entities.json
+Output: p3_a_entities.json
   Maps entity_id -> list of merged track_ids, with team_id, is_goaltender,
   jersey_number (if OCR'd), per-entity frame range and coverage, plus a
   list of unmatched singleton tracks.
 
-Signals and constraints (see docs/p1_d_entities_design.md for the rationale):
+Signals and constraints (see docs/p3_a_entities_design.md for the rationale):
   - Appearance embedding: OSNet x0_25 medoid over top-conf crops per track
   - Hard constraint — same team_id (from P1.b), both sides with
     vote_confidence >= `--team-conf-floor`
@@ -410,7 +414,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     Loads P1.a/b/c outputs, computes per-track OSNet medoid
     embeddings, builds a pair-wise merge graph under team / non-overlap
     / OCR-conflict constraints, runs greedy union-find merging, and
-    writes ``p1_d_entities.json`` with the resulting clusters.
+    writes ``p3_a_entities.json`` with the resulting clusters.
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -510,7 +514,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
 def main():
     """CLI entry point — parse arguments and dispatch to ``run``."""
     p = argparse.ArgumentParser(
-        description="RILH-AI-Vision — p1_d_entities : merge tracks into entities"
+        description="RILH-AI-Vision — p3_a_entities : merge tracks into entities"
     )
     p.add_argument("detections_json", type=str,
                    help="P1.a output (p1_a_detections.json)")
@@ -520,7 +524,7 @@ def main():
                    help="P1.c output (p1_c_numbers.json)")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
-                   help="Output JSON (default: <detections_dir>/p1_d_entities.json)")
+                   help="Output JSON (default: <detections_dir>/p3_a_entities.json)")
     p.add_argument("--samples-per-track", type=int, default=8)
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--sim-threshold", type=float, default=0.65,
@@ -547,7 +551,7 @@ def main():
     numbers_json = Path(args.numbers_json)
     video_path = Path(args.video)
     output = (Path(args.output) if args.output
-              else detections_json.with_name("p1_d_entities.json"))
+              else detections_json.with_name("p3_a_entities.json"))
 
     run(
         detections_json, teams_json, numbers_json, video_path, output,

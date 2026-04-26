@@ -7,35 +7,36 @@ that it stays independently runnable; this orchestrator only knows the
 glue (which file feeds which, which flags pass through, what to skip).
 
 Pipeline (in execution order):
-  Phase 1 — Detect & track       — 5 stages (a..e), full identification
-  Phase 2 — Virtual follow-cam   — 1 stage (a), parked (opt-in via --run-p2)
-  Phase 3 — Rink calibration     — 1 stage (a), parked / tolerant of failure
+  Phase 1 — Detect & track       — 3 stages (a detect, b teams, c numbers)
+  Phase 2 — Rink calibration     — 1 stage (a), HIGH PRIORITY / in progress
+                                    (HockeyRink doesn't transfer to roller
+                                    yet — needs a fine-tune dataset; Phase 2
+                                    is run by default but tolerant of failure)
+  Phase 3 — Entity recognition   — 2 stages (a entities, b annotated MP4),
+                                    formerly Phase 1 stages d + e
   Phase 4 — Event detection      — 1 stage (a), STUB
   Phase 5 — Statistics creation  — 1 stage (a), STUB
 
 Phase 6 (Web platform) and Phase 7 (Multi-cam / live) are not part of the per-run
 pipeline — they are separate services that consume the run folder.
 
+The previous Phase 2 (Virtual follow-cam) was removed; its output wasn't
+usable and rink calibration is the bottleneck for entity quality.
+
 Usage:
-  python src/run_project.py videos/match.mp4 --output runs/run23 \\
+  python src/run_project.py videos/match.mp4 --output runs/run30 \\
       --hockey-model --pose-model yolo26l-pose.pt \\
       --parseq-checkpoint models/parseq_hockey_rilh.pt
 
   # Skip a phase entirely:
-  python src/run_project.py videos/match.mp4 --output runs/run23 --skip-p3
-
-  # Opt in to a parked phase (Phase 2 follow-cam is off by default):
-  python src/run_project.py videos/match.mp4 --output runs/run23 --run-p2
+  python src/run_project.py videos/match.mp4 --output runs/run30 --skip-p2
 
   # Force re-run even if outputs already exist:
-  python src/run_project.py videos/match.mp4 --output runs/run23 --force
+  python src/run_project.py videos/match.mp4 --output runs/run30 --force
 
-By default Phase 1, 3, 4, 5 are ON and Phase 2 is OFF (parked: the
-follow-cam output isn't usable yet, and unlike Phase 3 it doesn't fail
-fast — it spends minutes producing an unwatchable MP4). Pass `--run-p2`
-to opt back in. Each stage skips its own work if its output file already
-exists (incremental re-runs cost nothing). Pass `--force` to re-run all
-enabled phases from scratch.
+By default every phase is ON; each stage skips its own work if its
+output file already exists (incremental re-runs cost nothing). Pass
+`--force` to re-run all enabled phases from scratch.
 """
 
 import argparse
@@ -71,7 +72,7 @@ def step(label, cmd, expected_outputs, force):
         False if the stage failed (subprocess exit != 0).
 
     Raises:
-        Nothing — caller decides what to do on failure (e.g. Phase 3 is
+        Nothing — caller decides what to do on failure (e.g. Phase 2 is
         tolerant, others may want to re-raise).
     """
     print(f"\n----- {label} -----")
@@ -93,10 +94,11 @@ def step(label, cmd, expected_outputs, force):
 
 
 def run_p1_detect_track(video, out, args):
-    """Run all 5 stages of Phase 1 (a → b → c → d → e) sequentially.
+    """Run Phase 1 (a detect → b teams → c numbers) sequentially.
 
     Halts on first failure: each stage's outputs feed the next, so a
-    failed Stage 1.a means Stage 1.b can't run.
+    failed Stage 1.a means Stage 1.b can't run. Annotation + entity
+    clustering moved to Phase 3 — they need rink-aware filtering.
     """
     print(f"\n========== Phase 1 — Detect & Track ==========")
 
@@ -133,62 +135,69 @@ def run_p1_detect_track(video, out, args):
                 [out / "p1_c_numbers.json"], args.force):
         raise SystemExit("Stage 1.c failed — halting Phase 1")
 
-    # Stage 1.d — entities (Re-ID merge)
-    cmd = [PYTHON, "-u", str(SRC / "p1_d_entities.py"),
+
+def run_p2_rink(video, out, args):
+    """Run Phase 2 — Rink calibration. High priority but currently
+    tolerant of failure: HockeyRink (ice) doesn't transfer to roller
+    rinks yet, so off-the-shelf inference will run but produce a
+    cluster of useless keypoints. The wiring is exercised so that a
+    future fine-tune drops cleanly into place; downstream phases
+    don't depend on a successful rink output yet."""
+    print(f"\n========== Phase 2 — Rink calibration ==========")
+    cmd = [PYTHON, "-u", str(SRC / "p2_a_rink.py"),
+           str(video), "--output", str(out)]
+    ok = step("Stage 2.a — Rink keypoints", cmd,
+              [out / "p2_a_rink_keypoints.json"], args.force)
+    if not ok:
+        print("  ⚠ Phase 2 not yet usable on roller rinks — fine-tune is the "
+              "next blocker. Continuing.")
+
+
+def run_p3_entity(video, out, args):
+    """Run Phase 3 — Entity recognition + final annotated MP4.
+
+    Stage 3.a re-IDs fragmented Phase 1 tracks into stable entities via
+    OSNet medoid embeddings + team / non-overlap / OCR constraints.
+    Stage 3.b renders the annotated.mp4 from those entities. Both
+    stages depend on Phase 1 outputs; Stage 3.b also auto-discovers
+    p3_a_entities.json so per-track labels stay consistent across
+    fragments.
+    """
+    print(f"\n========== Phase 3 — Entity recognition ==========")
+
+    needed = [out / "p1_a_detections.json",
+              out / "p1_b_teams.json",
+              out / "p1_c_numbers.json"]
+    for n in needed:
+        if not n.exists():
+            print(f"  ⚠ Phase 3 needs {n.name} — skipping")
+            return
+
+    # Stage 3.a — entities (Re-ID merge)
+    cmd = [PYTHON, "-u", str(SRC / "p3_a_entities.py"),
            str(out / "p1_a_detections.json"), str(out / "p1_b_teams.json"),
            str(out / "p1_c_numbers.json"), str(video)]
-    if not step("Stage 1.d — Entities", cmd,
-                [out / "p1_d_entities.json"], args.force):
-        raise SystemExit("Stage 1.d failed — halting Phase 1")
+    if not step("Stage 3.a — Entities", cmd,
+                [out / "p3_a_entities.json"], args.force):
+        raise SystemExit("Stage 3.a failed — halting Phase 3")
 
-    # Stage 1.e — annotate (final MP4)
-    cmd = [PYTHON, "-u", str(SRC / "p1_e_annotate.py"),
+    # Stage 3.b — annotate (final MP4)
+    cmd = [PYTHON, "-u", str(SRC / "p3_b_annotate.py"),
            str(out / "p1_a_detections.json"), str(out / "p1_c_numbers.json"),
            str(video), "--output", str(out / "annotated.mp4")]
-    if not step("Stage 1.e — Annotate", cmd,
+    if not step("Stage 3.b — Annotate", cmd,
                 [out / "annotated.mp4"], args.force):
-        raise SystemExit("Stage 1.e failed — halting Phase 1")
-
-
-def run_p2_followcam(video, out, args):
-    """Run Phase 2 — Virtual follow-cam. Currently parked: the cinematography
-    output isn't usable yet (jittery, mis-framed), and the stage takes minutes
-    to produce that unusable MP4 — so unlike Phase 3 (which fails fast and is
-    kept on by default to exercise the wiring) Phase 2 is opt-in via
-    `--run-p2`. Depends on p1_a_detections.json from Stage 1.a."""
-    print(f"\n========== Phase 2 — Virtual follow-cam (parked) ==========")
-    if not (out / "p1_a_detections.json").exists():
-        print("  ⚠ p1_a_detections.json missing — Phase 2 needs Stage 1.a; skipping")
-        return
-    cmd = [PYTHON, "-u", str(SRC / "p2_a_followcam.py"),
-           str(out / "p1_a_detections.json"), str(video),
-           "--output", str(out / "followcam.mp4")]
-    step("Stage 2.a — Follow-cam", cmd, [out / "followcam.mp4"], args.force)
-
-
-def run_p3_rink(video, out, args):
-    """Run Phase 3 — Rink calibration. Currently parked: HockeyRink doesn't
-    transfer to roller rinks. We still run it so the orchestrator wiring
-    is exercised, but a non-zero exit code is logged and ignored — it
-    must not block downstream phases."""
-    print(f"\n========== Phase 3 — Rink calibration (parked) ==========")
-    cmd = [PYTHON, "-u", str(SRC / "p3_a_rink.py"),
-           str(video), "--output", str(out)]
-    ok = step("Stage 3.a — Rink keypoints", cmd,
-              [out / "p3_a_rink_keypoints.json"], args.force)
-    if not ok:
-        print("  ⚠ Phase 3 is parked (HockeyRink doesn't transfer to roller). "
-              "Continuing.")
+        raise SystemExit("Stage 3.b failed — halting Phase 3")
 
 
 def run_p4_events(out, args):
     """Run Phase 4 — Event detection (stub). Writes a marker JSON."""
     print(f"\n========== Phase 4 — Event detection (stub) ==========")
-    if not (out / "p1_a_detections.json").exists() or not (out / "p1_d_entities.json").exists():
-        print("  ⚠ Phase 4 needs p1_a_detections.json + p1_d_entities.json — skipping")
+    if not (out / "p1_a_detections.json").exists() or not (out / "p3_a_entities.json").exists():
+        print("  ⚠ Phase 4 needs p1_a_detections.json + p3_a_entities.json — skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p4_a_events.py"),
-           str(out / "p1_a_detections.json"), str(out / "p1_d_entities.json"),
+           str(out / "p1_a_detections.json"), str(out / "p3_a_entities.json"),
            "--output", str(out / "p4_a_events.json")]
     step("Stage 4.a — Events", cmd, [out / "p4_a_events.json"], args.force)
 
@@ -196,11 +205,11 @@ def run_p4_events(out, args):
 def run_p5_stats(out, args):
     """Run Phase 5 — Statistics creation (stub). Writes a marker JSON."""
     print(f"\n========== Phase 5 — Statistics (stub) ==========")
-    if not (out / "p1_d_entities.json").exists() or not (out / "p1_c_numbers.json").exists():
-        print("  ⚠ Phase 5 needs p1_d_entities.json + p1_c_numbers.json — skipping")
+    if not (out / "p3_a_entities.json").exists() or not (out / "p1_c_numbers.json").exists():
+        print("  ⚠ Phase 5 needs p3_a_entities.json + p1_c_numbers.json — skipping")
         return
     cmd = [PYTHON, "-u", str(SRC / "p5_a_stats.py"),
-           str(out / "p1_d_entities.json"), str(out / "p1_c_numbers.json"),
+           str(out / "p3_a_entities.json"), str(out / "p1_c_numbers.json"),
            "--output", str(out / "p5_a_stats.json")]
     step("Stage 5.a — Stats", cmd, [out / "p5_a_stats.json"], args.force)
 
@@ -216,17 +225,17 @@ def main():
     # Required positional + output
     p.add_argument("video", type=str, help="Input video path (.mp4)")
     p.add_argument("--output", type=str, required=True,
-                   help="Output run folder, e.g. runs/run23/")
+                   help="Output run folder, e.g. runs/run30/")
 
     # Phase gates — each phase is ON by default
     g = p.add_argument_group("Phase gates")
     g.add_argument("--skip-p1", action="store_true",
-                   help="Skip Phase 1 (Detect & track + teams + numbers + entities + annotate)")
-    g.add_argument("--run-p2", action="store_true",
-                   help="Opt in to Phase 2 (Virtual follow-cam) — parked, "
-                        "produces an unusable MP4; off by default")
+                   help="Skip Phase 1 (Detect & track + teams + numbers)")
+    g.add_argument("--skip-p2", action="store_true",
+                   help="Skip Phase 2 (Rink calibration — high priority but "
+                        "currently tolerant of failure pending the fine-tune)")
     g.add_argument("--skip-p3", action="store_true",
-                   help="Skip Phase 3 (Rink calibration, parked)")
+                   help="Skip Phase 3 (Entity recognition + annotated MP4)")
     g.add_argument("--skip-p4", action="store_true",
                    help="Skip Phase 4 (Event detection, stub)")
     g.add_argument("--skip-p5", action="store_true",
@@ -265,14 +274,8 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     out = out.resolve()
 
-    enabled = []
-    for n in (1, 2, 3, 4, 5):
-        if n == 2:
-            if args.run_p2:
-                enabled.append("Phase 2")
-            continue
-        if not getattr(args, f"skip_p{n}"):
-            enabled.append(f"Phase {n}")
+    enabled = [f"Phase {n}" for n in (1, 2, 3, 4, 5)
+               if not getattr(args, f"skip_p{n}")]
     print("=" * 64)
     print(f"RILH-AI-Vision project orchestrator")
     print(f"  started : {datetime.datetime.now(datetime.UTC).isoformat()}")
@@ -285,10 +288,10 @@ def main():
     t_start = time.time()
     if not args.skip_p1:
         run_p1_detect_track(video, out, args)
-    if args.run_p2:
-        run_p2_followcam(video, out, args)
+    if not args.skip_p2:
+        run_p2_rink(video, out, args)
     if not args.skip_p3:
-        run_p3_rink(video, out, args)
+        run_p3_entity(video, out, args)
     if not args.skip_p4:
         run_p4_events(out, args)
     if not args.skip_p5:

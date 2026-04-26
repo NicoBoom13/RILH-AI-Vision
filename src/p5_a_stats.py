@@ -8,7 +8,7 @@ saves, possession, etc. — once event detection (P4) is real, this
 stage will key on those events too.
 
 Inputs:
-  p1_d_entities.json (P1.d)
+  p3_a_entities.json (P3.a)
   p1_c_numbers.json  (P1.c)
 
 Outputs:
@@ -30,7 +30,7 @@ def main():
     confirm the stage ran in a given run folder."""
     p = argparse.ArgumentParser(description="P5.a statistics stub (no-op)")
     p.add_argument("entities_json", type=str,
-                   help="P1.d output (p1_d_entities.json) — read by future impl")
+                   help="P3.a output (p3_a_entities.json) — read by future impl")
     p.add_argument("numbers_json", type=str,
                    help="P1.c output (p1_c_numbers.json) — read by future impl")
     p.add_argument("--output", required=True, type=str,

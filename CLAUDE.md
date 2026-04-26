@@ -20,8 +20,8 @@ analytics. Built from open-source modules + custom code only.
   "practically perfect" except referees (HockeyAI mislabels them
   'player' on roller — can't filter by class_name) and the Pont de Metz
   goalie (white pads → classified pale). Improvement needs position-
-  based assignment (waits for Stage 3.a) or custom goalie sampling —
-  deferred.
+  based assignment (waits for Phase 2 rink calibration) or custom
+  goalie sampling — deferred.
 - **Stage 1.c (Numbers)** ✅ : per-track jersey-number OCR via **PARSeq
   Hockey + RILH fine-tune**. Single engine (PARSeq); the previous
   TrOCR / together engines were removed in the refactor — the digit
@@ -43,36 +43,39 @@ analytics. Built from open-source modules + custom code only.
   truth tracks: recall 55–58 % → **81–84 %** ; precision 63–68 % →
   **95–96 %**. Names are not identified — PARSeq Hockey is digit-only;
   a name fine-tune is a separate later step.
-- **Stage 1.d (Entities)** ✅ : post-hoc **Re-ID clustering** that
-  collapses fragmented tracks into stable entities (one entity = one
-  real player / goalie). Uses OSNet x0_25 (via `torchreid`) medoid
-  embedding per track + greedy merge under **same-team constraint**
-  (from Stage 1.b), **strict temporal non-overlap**, and **OCR bonus**
-  (from Stage 1.c). OCR conflicts are a hard block. Output:
-  `p1_d_entities.json` consumed downstream by `p1_e_annotate.py`. On
-  run12 (250 tracks → 40 entities), on run13 (167 tracks → 24
-  entities). Doesn't replace the tracker — it post-processes its
-  output. Entity-level `is_goaltender` is weighted by frame coverage
-  to absorb HockeyAI class flips. Design doc:
-  `docs/p1_d_entities_design.md`.
-- **Stage 1.e (Annotate)** ✅ : final MP4 with team-coloured boxes,
-  per-track label `t{id} {G|S} #NN` (track id always shown),
-  dark-gray puck box, short traces. Auto-discovers `p1_b_teams.json` and
-  `p1_d_entities.json` next to `p1_a_detections.json` if present. Optional
-  `--debug-frames-dir` writes 1 PNG every N frames.
-- **Stage 2.a (Follow-cam)** ❌ PARKED : virtual broadcast cam. The
-  current output isn't usable (jittery framing, mis-targeted focus on
-  fast plays) and the stage takes minutes to render an unwatchable MP4.
-  Unlike Phase 3 (which fails fast and is left ON to exercise the
-  wiring), Phase 2 is **opt-in via `--run-p2`** in the orchestrator —
-  off by default to avoid wasting wall-clock per run. The stage script
-  itself (`p2_a_followcam.py`) still works standalone for direct
-  iteration. Only depends on `p1_a_detections.json`, so it can be
-  re-enabled later without re-running Phase 1.
-- **Stage 3.a (Rink calibration)** ❌ PARKED. The obvious shortcut
-  (HockeyRink keypoints) **does not transfer to roller rinks** — see
-  run05–run07 in the test log. Needs a roller-specific annotated
-  dataset (200–300 frames) + fine-tune to unblock.
+- **Stage 2.a (Rink calibration)** 🚧 HIGH PRIORITY (was Phase 3, promoted).
+  HockeyRink keypoints don't transfer to roller rinks off the shelf —
+  the model recognises "a rink" but collapses all 56 keypoints into a
+  small cluster instead of localising them (see run05–run07). Promoted
+  from "parked" because rink calibration is the cleanest way to add
+  a geometric on-ice / off-ice classifier, which directly fixes the
+  spectator-pollution and ref-mis-classification limits in entity
+  recognition (Phase 3). Unblocking requires a fine-tune dataset —
+  200–300 annotated roller-rink frames — which is now the top
+  out-of-pipeline blocker. The orchestrator still tolerates failure on
+  this stage so the wiring stays exercised end-to-end.
+- **Stage 3.a (Entity recognition)** ✅ (was Stage 1.d). Post-hoc
+  **Re-ID clustering** that collapses fragmented Phase 1 tracks into
+  stable entities (one entity = one real player / goalie). Uses OSNet
+  x0_25 (via `torchreid`) medoid embedding per track + greedy merge
+  under **same-team constraint** (from Stage 1.b), **strict temporal
+  non-overlap**, and **OCR bonus** (from Stage 1.c). OCR conflicts are
+  a hard block. Output: `p3_a_entities.json`, consumed by Stage 3.b
+  (annotate), Phase 4 (events), and Phase 5 (stats). On run12 (250
+  tracks → 40 entities), run13 (167 tracks → 24 entities). Doesn't
+  replace the tracker — it post-processes its output. Entity-level
+  `is_goaltender` is weighted by frame coverage to absorb HockeyAI
+  class flips. Design doc: `docs/p3_a_entities_design.md`.
+- **Stage 3.b (Annotate)** ✅ (was Stage 1.e). Final MP4 with team-
+  coloured boxes, per-track label `t{id} {G|S} #NN` (track id always
+  shown), dark-gray puck box, short traces. Auto-discovers
+  `p1_b_teams.json` and `p3_a_entities.json` next to
+  `p1_a_detections.json` if present. Optional `--debug-frames-dir`
+  writes 1 PNG every N frames.
+- **Phase 2 follow-cam (former)** — REMOVED from the project for now.
+  Output wasn't usable and rink calibration is the bottleneck for
+  every other downstream improvement. Will resurface as its own phase
+  later, after Phase 2 (rink) is unblocked.
 
 ## Architecture
 
@@ -84,24 +87,25 @@ Big chunks of work, each with its own concern:
 
 | Phase | Name | In pipeline? |
 |---|---|---|
-| **Phase 1** | Detect & track (full identification) | ✅ orchestrated |
-| **Phase 2** | Virtual follow-cam | ⏸ orchestrated but parked (opt-in via `--run-p2`) |
-| **Phase 3** | Rink calibration | ✅ orchestrated (parked, tolerant of failure) |
+| **Phase 1** | Detect & track (a detect, b teams, c numbers) | ✅ orchestrated |
+| **Phase 2** | Rink calibration | 🚧 orchestrated, **HIGH PRIORITY** (tolerant of failure pending the fine-tune dataset) |
+| **Phase 3** | Entity recognition (a entities, b annotated MP4) | ✅ orchestrated |
 | **Phase 4** | Event detection | ✅ orchestrated (stub) |
 | **Phase 5** | Statistics creation | ✅ orchestrated (stub) |
 | **Phase 6** | Web platform (FastAPI + Next.js) | ❌ external — consumes `runs/runNN/` folders |
 | **Phase 7** | Multi-cam stitching, live RTMP/HLS, app mobile | ❌ external — infra + mobile |
 
 The orchestrator `src/run_project.py` runs Phase 1 → Phase 5 in sequence with
-per-phase gates (`--skip-pN`, `--force`). **Phase 2 is OFF by default** because
-its current output isn't usable; pass `--run-p2` to opt back in. Phase 6 and
-Phase 7 are services / infra that live outside the per-run pipeline.
+per-phase gates (`--skip-pN`, `--force`). All five are ON by default; the
+former Phase 2 (Virtual follow-cam) was removed in this restructure (see
+`Phase 2 follow-cam (former)` above for the rationale). Phase 6 and Phase 7
+are services / infra that live outside the per-run pipeline.
 
 ### Level 2 — internal stages of each phase
 
 Each phase decomposes into one or more stages, named `pN_x_*.py`:
 
-**Phase 1 — Detect & track** (5 stages, sequential):
+**Phase 1 — Detect & track** (3 stages, sequential):
 
 1. `src/p1_a_detect.py` → `p1_a_detections.json` (per-frame bboxes, class IDs,
    persistent track IDs). HockeyAI YOLO + ByteTrack. Match-mode default
@@ -111,22 +115,22 @@ Each phase decomposes into one or more stages, named `pN_x_*.py`:
 3. `src/p1_c_numbers.py` → `p1_c_numbers.json`: per-track jersey number via
    YOLO pose + PARSeq (`--parseq-checkpoint models/parseq_hockey_rilh.pt`
    for our RILH-fine-tuned model). Crop is Koshkina-style.
-4. `src/p1_d_entities.py` → `p1_d_entities.json`: fragmented tracks collapsed
-   into stable entities via OSNet embeddings + team/overlap/OCR constraints.
-5. `src/p1_e_annotate.py` → annotated MP4 with team-coloured boxes +
-   `t{id} {G|S} #NN` labels.
 
-**Phase 2 — Virtual follow-cam** (1 stage, parked):
+**Phase 2 — Rink calibration** (1 stage, high priority):
 
-- `src/p2_a_followcam.py` → `followcam.mp4`. Reads only `p1_a_detections.json`.
-  Currently parked: output isn't usable yet. Off by default in the
-  orchestrator; opt back in with `--run-p2`. Still callable standalone for
-  direct iteration.
+- `src/p2_a_rink.py` → `p2_a_rink_keypoints.json` (intended). HockeyRink
+  off the shelf doesn't transfer to roller — the next step is a roller-
+  specific keypoint dataset + fine-tune. Orchestrator runs it by default
+  and tolerates the failure so the wiring stays exercised.
 
-**Phase 3 — Rink calibration** (1 stage, parked):
+**Phase 3 — Entity recognition** (2 stages, sequential):
 
-- `src/p3_a_rink.py` → `p3_a_rink_keypoints.json` (would be), but HockeyRink
-  doesn't transfer to roller. Orchestrator tolerates the failure.
+1. `src/p3_a_entities.py` → `p3_a_entities.json`: fragmented Phase 1 tracks
+   collapsed into stable entities via OSNet embeddings + team/overlap/OCR
+   constraints. Was Stage 1.d.
+2. `src/p3_b_annotate.py` → annotated MP4 with team-coloured boxes +
+   `t{id} {G|S} #NN` labels. Auto-discovers `p1_b_teams.json` +
+   `p3_a_entities.json`. Was Stage 1.e.
 
 **Phase 4 — Event detection** (1 stage, stub):
 
@@ -177,17 +181,6 @@ Tracker is configurable via `--tracker <yaml>`:
   compensation) and ReID (appearance features from the YOLO backbone).
   Slower but makes individual tracks longer — see run11.
 
-### Follow-cam (Stage 2.a — parked)
-Design notes kept for the eventual un-park. Output today is jittery /
-mis-framed and not consumable; orchestrator runs only with `--run-p2`.
-- **Focus point = weighted blend of puck position and players centroid**.
-  Puck gets high weight when detected; players-centroid fallback otherwise.
-  Recently-seen puck positions are extrapolated for ~15 frames to bridge
-  missed detections.
-- **Smoothing = exponential moving average** on the focus trajectory,
-  optionally followed by a centered boxcar pass for extra polish.
-- **Crop window clamped to frame bounds** so we never show black bars.
-
 ### Jersey identification (Stage 1.c)
 `p1_c_numbers.py` pipeline, one pass per track (not per frame — keeps
 inference tractable):
@@ -228,8 +221,9 @@ inference tractable):
 8. **Merge** tracks that share the same confident number and don't overlap
    in time — they're the same player with a broken track.
 
-### Entity clustering (Stage 1.d)
-`p1_d_entities.py` post-processes fragmented tracks into stable entities:
+### Entity clustering (Stage 3.a)
+`p3_a_entities.py` post-processes fragmented Phase 1 tracks into stable
+entities:
 1. Per-track **OSNet x0_25 medoid embedding** (512-d, L2-normalised) over
    the top-N confidence detections.
 2. Build candidate merge graph: all pairs `(a, b)` with **same team_id
@@ -241,7 +235,7 @@ inference tractable):
 4. Greedy merge in descending weight until similarity drops below
    `--sim-threshold` (default 0.65). Re-checks overlap on the merged
    cluster each time.
-5. Output: `p1_d_entities.json` with `track_ids` lists, derived
+5. Output: `p3_a_entities.json` with `track_ids` lists, derived
    `team_id` / `is_goaltender` / `jersey_number` / frame ranges, plus a
    list of unmatched singleton tracks.
 
@@ -249,7 +243,7 @@ inference tractable):
 - Stage 1.b `is_goaltender` per track uses a **majority threshold**
   (>50 % of detections tagged `goaltender`), replacing the previous
   `any` rule that flipped a track on a single noisy frame.
-- Stage 1.d entity-level `is_goaltender` is **weighted by frame
+- Stage 3.a entity-level `is_goaltender` is **weighted by frame
   coverage**: an entity is goalie only if more than half of its merged
   tracks' total frame count comes from goalie-tagged tracks.
 - Stage 1.c aggregation requires **≥2 agreeing votes** for the winning
@@ -258,13 +252,16 @@ inference tractable):
 **Spectator handling** — see run17 for why a motion+position filter was
 attempted then **removed**: it dropped ~50 % of real player fragments to
 catch ~30 spectators, while the 7 spectators HockeyAI tags as goalies
-slipped through anyway. The plan is to wait for **Stage 3.a rink
-calibration** (geometric "is this bbox on the ice?") to do this cleanly.
+slipped through anyway. The plan is now **Phase 2 (rink calibration)**:
+once a roller rink keypoint detector is fine-tuned, every Stage 3.a
+candidate can be filtered geometrically ("is this bbox on the ice?")
+before clustering. That single change is expected to clean both
+spectator pollution and the ref leak into team clusters.
 
-Annotation (`p1_e_annotate.py`):
+Annotation (`p3_b_annotate.py`):
 - Supervision-style boxes/labels/traces. Box color is **forced green or
   blue** per team.
-- **Entity-aware**: if `p1_d_entities.json` exists, the label + team come
+- **Entity-aware**: if `p3_a_entities.json` exists, the label + team come
   from the entity (so every merged fragment shares the same `#NN`, name
   and colour across the video). Otherwise, per-track values from
   `p1_b_teams.json` + `p1_c_numbers.json`.
@@ -273,39 +270,43 @@ Annotation (`p1_e_annotate.py`):
   if no number, name omitted if not identified.
 - **Puck**: rendered as a dark gray bbox (60,60,60) + short trace.
   No label.
-- **Spectators**: not filtered (will be addressed by Stage 3.a rink
-  calibration). All tracked detections render — including stationary
-  bystanders that HockeyAI tags as players.
+- **Spectators**: not filtered until Phase 2 rink calibration is online.
+  All tracked detections render — including stationary bystanders that
+  HockeyAI tags as players.
 
 ## Known limitations (in priority order)
-1. **Video source quality** still affects team-colour clustering and
+1. **Phase 2 rink calibration is THE current bottleneck** for entity
+   quality. HockeyRink (ice) doesn't transfer to roller rinks — the
+   model "recognises" a rink but collapses all 56 keypoints to a
+   cluster. Unblocking requires 200–300 annotated frames of roller
+   rinks + a fine-tune. Once unlocked, an "on-ice / off-ice"
+   geometric filter applied to Stage 3.a candidates removes the
+   spectator pollution AND most of the ref leakage in one shot —
+   that's why this jumped to high priority. Sub-blockers below are
+   expected to fall away or shrink dramatically afterwards.
+2. **Stationary spectators / refs leaking into team clusters** —
+   today they form their own entities or get absorbed into one of the
+   two teams (HockeyAI tags refs as `class_name='player'` on roller).
+   Run17 tried a motion+position filter in Stage 1.b and reverted it
+   (over-filtered real players). Clean fix waits for #1.
+3. **Track fragmentation** is real but **partly absorbed** by Stage 3.a
+   (run16: 435 tracks → 37 entities, of which only 5 G after the
+   goalie majority + frame-coverage rules). HockeyAI still
+   intermittently flips goaltender/player class on individual frames,
+   but the majority threshold + frame-coverage weighting mostly
+   neutralises that.
+4. **Video source quality** still affects team-colour clustering and
    any per-frame analysis on small / blurry / oblique players. Number
    OCR is no longer the bottleneck (post run21: 95-96 % precision,
    81-84 % recall on truth tracks via PARSeq Hockey + RILH fine-tune).
    The remaining ~15-20 % missed numbers are mostly tracks where the
    back is never cleanly visible.
-2. **Track fragmentation** is real but **partly absorbed** by Stage 1.d
-   (run16: 435 tracks → 37 entities, of which only 5 G after the
-   goalie majority + frame-coverage rules). HockeyAI still
-   intermittently flips goaltender/player class on individual frames,
-   but the majority threshold + frame-coverage weighting mostly
-   neutralises that. Refs still merge into the two teams (no third
-   cluster) — see #5. **Stationary spectators that HockeyAI mistags as
-   `player` or `goaltender` still pollute entities** — the Stage 1.b
-   spectator filter attempted in run17 over-filtered real players and
-   was reverted; clean fix waits for Stage 3.a rink calibration.
-3. **Stage 3.a calibration** is blocked on annotation. HockeyRink (ice) does
-   not transfer to roller rinks — the model "recognises" a rink but collapses
-   all 56 keypoints to a cluster instead of localising them individually.
-   Unblocking requires 200–300 annotated frames of roller rinks.
-4. **Puck detection quality** is workable (~43% of frames with HockeyAI vs
+5. **Puck detection quality** is workable (~43% of frames with HockeyAI vs
    <1% with COCO) but drops on motion blur, small pucks, and uneven lighting.
-   Roller-specific fine-tune (Phase 4) would narrow the gap.
-5. **Refs leak into team clusters** because HockeyAI doesn't recognise
-   roller-hockey referee uniforms — they're tagged `class_name='player'`.
-   Fixable by k=3 clustering in Stage 1.b or a dedicated ref detector.
-6. No event detection yet (Phase 5).
-7. Single-camera assumption. Multi-camera stitching = Phase 7.
+   Roller-specific fine-tune would narrow the gap.
+6. No event detection yet (Phase 4).
+7. No statistics yet (Phase 5).
+8. Single-camera assumption. Multi-camera stitching = Phase 7.
 
 ## Conventions
 - Python 3.10+ (project uses 3.12 in the dev venv)
@@ -327,15 +328,14 @@ src/
 ├── p1_a_detect.py         — Phase 1 stage a — detect & track
 ├── p1_b_teams.py          — Phase 1 stage b — teams
 ├── p1_c_numbers.py        — Phase 1 stage c — numbers (PARSeq OCR)
-├── p1_d_entities.py       — Phase 1 stage d — entities (Re-ID merge)
-├── p1_e_annotate.py       — Phase 1 stage e — annotate (final MP4)
-├── p2_a_followcam.py      — Phase 2 stage a — virtual follow-cam
-├── p3_a_rink.py           — Phase 3 stage a — rink calibration (parked)
+├── p2_a_rink.py           — Phase 2 stage a — rink calibration (high prio)
+├── p3_a_entities.py       — Phase 3 stage a — entities (Re-ID merge)
+├── p3_b_annotate.py       — Phase 3 stage b — annotate (final MP4)
 ├── p4_a_events.py         — Phase 4 stage a — event detection (STUB)
 └── p5_a_stats.py          — Phase 5 stage a — statistics (STUB)
 
 configs/                   — tracker YAMLs (bytetrack_tuned, botsort_reid)
-docs/                      — design notes (p1_d_entities_design.md)
+docs/                      — design notes (p3_a_entities_design.md)
 models/                    — model weights (gitignored). Ultralytics YOLOs,
                               HockeyAI, parseq_hockey.pt (Koshkina),
                               parseq_hockey_rilh.pt (our fine-tune).
@@ -347,7 +347,9 @@ data/                      — license-clean datasets (committed). Today:
 tools/                     — utilities (annotation web UI, dataset/splits
                               builders, fine-tune script, smoke tests).
                               Not pipeline stages.
-graphify-out/              — local 3D visualization (gitignored).
+graphify-out/              — local 3D visualization (mostly gitignored;
+                              regen.py + orchestration.json + style.css +
+                              REGEN.md tracked as source).
 ```
 
 ## Tools (`tools/`)
@@ -394,6 +396,21 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
+- **2026-04-26 restructure** — phase numbering rewritten so the
+  pipeline reads in causal order: detection → rink → entity → events
+  → stats. **Phase 2 (Virtual follow-cam) removed** (output wasn't
+  usable, was wasting wall-clock and stalling the actual blocker).
+  **Rink calibration promoted from parked Phase 3 to high-priority
+  Phase 2** (`src/p2_a_rink.py`); rink-aware on-ice/off-ice filtering
+  is the cleanest path to fix spectator pollution + ref leakage in
+  entity recognition. **Old Stage 1.d (Entities)** moved to Stage
+  3.a (`src/p3_a_entities.py`, output `p3_a_entities.json`). **Old
+  Stage 1.e (Annotate)** moved to Stage 3.b (`src/p3_b_annotate.py`)
+  since it depends on entity rollups. Phase 4 + 5 stubs rewired to
+  read `p3_a_entities.json`. The orchestrator's `--run-p2` flag is
+  gone; new `--skip-p2` (rink) is OFF by default like every other
+  phase. Historical run01–run29 entries in this log keep their
+  original phase numbers — they describe what shipped at that moment.
 - **run24–run29** — full Phase 1 → Phase 5 validation of the freshly
   fine-tuned `parseq_hockey_rilh.pt` (the run23 model trained on 6 videos)
   across all six dataset videos. Total wall-clock 3h54m on MPS, sequential.
@@ -440,7 +457,7 @@ Condensed: only the runs cross-referenced from this file (status, design choices
   Dropped 60 % of tracks → Stage 1.d 37 → 20 entities (closer to the real
   count) but **~50 % of real player fragments were also dropped**, and the
   7 spectators HockeyAI tags as goalies still slipped through. Filter
-  reverted; clean fix waits for Stage 3.a rink calibration (geometric
+  reverted; clean fix waits for Phase 2 rink calibration (geometric
   on/off-ice test). TrOCR receipt-vocab hallucinations
   (`CASHIER`/`AMOUNT`/…) confirmed at the entity level — one of the
   reasons the refactor dropped TrOCR entirely.
@@ -462,12 +479,13 @@ Condensed: only the runs cross-referenced from this file (status, design choices
   tracks than ByteTrack tuned (run10), but ReID from the YOLO backbone
   doesn't discriminate within a team (5 identical jerseys), so the gain
   is marginal — see `Tracker backends`.
-- **run05 / run06 / run07** — Stage 3.a HockeyRink transfer tests on three
-  videos (clip60-2 with relaxed thresholds; Video 03 30 s; Video 02
-  12 min). The model recognises that there *is* a rink but cannot
+- **run05 / run06 / run07** — rink-stage HockeyRink transfer tests on
+  three videos (clip60-2 with relaxed thresholds; Video 03 30 s; Video
+  02 12 min). The model recognises that there *is* a rink but cannot
   localise its keypoints on roller markings — keypoints either cluster
-  in a single area or are too few for a RANSAC homography. Confirms the
-  parked status of Stage 3.a.
+  in a single area or are too few for a RANSAC homography. This is
+  what motivated keeping the rink stage non-blocking, then promoting
+  it to Phase 2 high-priority once entity quality plateaued.
 - **run04** — **canonical Stage 1.a baseline**. clip60-2 + HockeyAI +
   ByteTrack default. 17 860 player detections, 433 tracks; puck in
   1 431 / 3 360 frames (**42.6 %**). Re-used as input for run08, 09,
@@ -486,7 +504,18 @@ run10, run14, run15, run18, run20) are kept verbatim in
 
 État courant des chantiers actifs, priorisé. Items concrets avec effort estimé
 (XS <30min, S ~1h, M ~1j, L ~1sem, XL >1sem). Pour les chantiers structurels
-multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
+multi-semaines (Phase 4+ et plateformes externes), voir la "Roadmap" en dessous.
+
+### 🔥 Priorité haute — Phase 2 (Rink calibration)
+- **Annoter 200–300 frames roller rink** (boards, cercles, buts, lignes —
+  56 keypoints suivant le schéma HockeyRink) puis fine-tuner HockeyRink
+  sur ce dataset. Bloque tout le reste de la chaîne aval : on-ice/off-ice
+  geometric filter pour Stage 3.a → fix spectateurs + fix refs. — XL
+- **Outil d'annotation dédié** (cousin de `tools/annotate_crops.py`) pour
+  picker les keypoints sur des frames samplées. Sans outil ergonomique
+  l'annotation va ramer. — M
+- **Pipeline data → fine-tune HockeyRink** (transfer learning depuis le
+  HockeyRink ice puisque la topologie de keypoints est identique). — M
 
 ### Phase 1 — Court terme
 - **Cache pose entre Stage 1.b et Stage 1.c** : aujourd'hui yolo26l-pose
@@ -495,7 +524,7 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
 - **Stage 1.b + Stage 1.c en parallèle** (processus séparés). Gain
   ~10-20 % supplémentaire (overlap GPU/CPU). — S
 
-### Phase 2 — Court-moyen terme
+### Phase 1 / Phase 3 — Court-moyen terme
 - **Fix team classification Stage 1.b** : sur run15, 6 tracks/435 mal
   classés avec `vote_confidence` 0.50–1.00 (donc le k-means capture la
   mauvaise couleur, pas un floor issue). Pistes par effort croissant :
@@ -510,27 +539,24 @@ multi-semaines (Phases 3–8+), voir la "Roadmap" en dessous.
   dédié (style sieve-data). Gain attendu couverture palet 42% → 55–65%.
   Plus utile *après* fine-tune Phase 4. — M
 
-### Phase 3 — Long terme (cf. Roadmap)
-- **Phase 4** : fine-tune HockeyAI sur 500–1000 frames RILH annotées.
+### Long terme (cf. Roadmap)
+- **Phase 4 fine-tune HockeyAI** sur 500–1000 frames RILH annotées.
   Bloqueur = annotation. Débloque puck + goalie + classes refs. — XL
-- **Fine-tune TrOCR** sur crops jersey RILH (numéros + noms). Élimine les
-  hallucinations receipt-style. — L
-- **Stage 3.a** : calibration rink + map 2D. Bloqué sur 200–300 annotations
-  keypoints rink roller. — XL
-- **Phase 5** : détection événements (buts, tirs, fautes). — XL
-- **Phase 7** : plateforme web FastAPI + Next.js. — L
-- **Phase 8+** : multi-cam stitching, live RTMP/HLS. — XL
+- **Fine-tune nom de joueur** (séparé du PARSeq Hockey digit-only). — L
+- **Phase 4 events** : détection événements (buts, tirs, fautes). — XL
+- **Phase 6 web platform** : FastAPI + Next.js. — L
+- **Phase 7+** : multi-cam stitching, live RTMP/HLS. — XL
 
 ## Roadmap (multi-week horizons)
 
 Six headlines; per-chantier scope, blockers, target metrics, and the surrounding technical surveys (public hockey models, WBF ensembling, cost/benefit ranking, datasets-to-build) live in `docs/experiments.md`.
 
-- **Stage 3.a — Rink calibration & 2D map** — blocked on 200–300 roller rink keypoint annotations.
+- **Phase 2 — Rink calibration & 2D map** (HIGH PRIORITY) — blocked on 200–300 roller rink keypoint annotations + fine-tune HockeyRink. Unlocks the on-ice / off-ice filter that downstream entity quality depends on.
 - **Phase 4 — Roller-specific YOLO fine-tune** (2–4 wk) — needs a 500–1000 frame RILH dataset; bootstrap with HockeyAI pre-labels. Target > 0.7 mAP on puck.
-- **Phase 5 — Event detection** (3–6 wk) — temporal action models (TSN / MoViNet / SlowFast); custom labelled set.
+- **Phase 4 — Event detection** (3–6 wk) — temporal action models (TSN / MoViNet / SlowFast); custom labelled set.
 - **Stage 1.c — Names + entity-level multi-frame OCR consensus** — recall ceiling currently set by source video quality + per-track voting; entity-level vote could push it further.
-- **Phase 7 — Web platform** (2–3 wk) — FastAPI + Next.js consuming `runs/runNN/`.
-- **Phase 8+** — Multi-cam stitching, live RTMP/HLS via MediaMTX, mobile control app.
+- **Phase 6 — Web platform** (2–3 wk) — FastAPI + Next.js consuming `runs/runNN/`.
+- **Phase 7+** — Multi-cam stitching, live RTMP/HLS via MediaMTX, mobile control app.
 
 ## Things to know when iterating
 - Test on a 60s clip first: `ffmpeg -i input.mp4 -ss 0 -t 60 -c copy clip.mp4`

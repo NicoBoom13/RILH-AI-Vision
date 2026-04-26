@@ -1,5 +1,5 @@
 """
-RILH-AI-Vision — p3_a_rink (PARKED)
+RILH-AI-Vision — p2_a_rink (Phase 2 stage a — high priority, in progress)
 HockeyRink keypoint-detector transfer sanity check.
 
 Samples N evenly-spaced frames from a clip, runs HockeyRink inference,
@@ -9,9 +9,11 @@ does NOT transfer cleanly to roller rinks — the model recognises 'a
 rink' but collapses all 56 keypoints into a small cluster instead of
 localising them. See CLAUDE.md tests run05–run07.
 
-Kept as the future starting point for Phase 3 (rink calibration +
-homography), which will need 200–300 annotated roller-rink frames
-to fine-tune HockeyRink properly.
+Phase 2 was promoted from "parked" to high priority because rink
+calibration unblocks geometric on-ice / off-ice classification, which
+in turn cleans up the entity-clustering output of Phase 3 (it currently
+keeps spectators that HockeyAI mis-tags as players). Unblocking still
+requires 200-300 annotated roller-rink frames to fine-tune HockeyRink.
 """
 
 import argparse
@@ -82,9 +84,9 @@ def overlay_keypoints(frame, kp_xy, kp_conf, min_conf=0.3):
 def main():
     """CLI entry point — sanity-check whether HockeyRink (an ice-hockey
     keypoint detector) transfers to the input roller-rink video.
-    Currently parked: the transfer doesn't work cleanly (see test05–07
-    in CLAUDE.md). Kept as a starting point for the future Phase 3
-    rink-calibration work."""
+    Now Phase 2 (high priority): the transfer doesn't work cleanly off
+    the shelf (see run05-run07 in CLAUDE.md), so the next step is a
+    roller-specific keypoint dataset + fine-tune."""
     p = argparse.ArgumentParser(description="HockeyRink transfer sanity check")
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default="runs/test05")

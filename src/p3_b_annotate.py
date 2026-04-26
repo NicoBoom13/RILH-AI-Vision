@@ -1,16 +1,22 @@
 """
-RILH-AI-Vision — p1_e_annotate
+RILH-AI-Vision — p3_b_annotate (Phase 3 stage b — final annotated MP4)
 Render the final annotated MP4 from upstream stage outputs:
   - BoxAnnotator + LabelAnnotator + TraceAnnotator from supervision
   - One fixed color per team (green / blue), inherited from P1.b
   - Per-track label : `t{id} {G|S} #NN` (track id always shown, role
-    G/S from is_goaltender, jersey number from P1.c via P1.d
+    G/S from is_goaltender, jersey number from P1.c via P3.a
     entity rollup; `#??` if no number identified)
   - Puck rendered as a dark gray bbox (no label) + short trace
 
+Annotate lives in Phase 3 (alongside entity clustering) because it
+needs the entity rollup to colour every track of one player with the
+same team colour and number. Phase 2 (rink) runs before Phase 3 so
+that future versions of entity clustering can reject off-ice tracks
+geometrically.
+
 Inputs : p1_a_detections.json (P1.a), p1_c_numbers.json (P1.c), the source
-         video; auto-discovers p1_b_teams.json (P1.b) and p1_d_entities.json
-         (P1.d) next to p1_a_detections.json if present.
+         video; auto-discovers p1_b_teams.json (P1.b) and p3_a_entities.json
+         (P3.a) next to p1_a_detections.json if present.
 Output : an annotated MP4 at the given --output path.
 """
 
@@ -334,7 +340,7 @@ def main():
     print(f"  tracks assigned: team 0 = {n0}, team 1 = {n1}")
 
     # Prefer entity-level team + jersey when P1.d has been run.
-    entities_json_path = detections_json.with_name("p1_d_entities.json")
+    entities_json_path = detections_json.with_name("p3_a_entities.json")
     entity_of_tid = None
     entity_by_id = None
     if entities_json_path.exists():

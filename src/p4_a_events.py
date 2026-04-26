@@ -9,7 +9,7 @@ does no real inference — it only writes a marker JSON proving it ran.
 
 Inputs:
   p1_a_detections.json (P1.a)
-  p1_d_entities.json   (P1.d)
+  p3_a_entities.json   (P3.a)
 
 Outputs:
   p4_a_events.json — {status: "stub_no_op", ran_at: "<ISO timestamp>"}
@@ -32,7 +32,7 @@ def main():
     p.add_argument("detections_json", type=str,
                    help="P1.a output (p1_a_detections.json) — read by future impl")
     p.add_argument("entities_json", type=str,
-                   help="P1.d output (p1_d_entities.json) — read by future impl")
+                   help="P3.a output (p3_a_entities.json) — read by future impl")
     p.add_argument("--output", required=True, type=str,
                    help="Output marker JSON path")
     args = p.parse_args()

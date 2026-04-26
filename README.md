@@ -10,9 +10,9 @@ separate concerns that consume the run folders.
 
 | # | Phase | In pipeline? | Stages | Status |
 |---|---|---|---|---|
-| **Phase 1** | Detect & track | ✅ yes | a (detect), b (teams), c (numbers), d (entities), e (annotate) | ✅ implemented |
-| **Phase 2** | Virtual follow-cam | ⏸ off by default (`--run-p2` to opt in) | a (followcam) | ❌ parked — output not usable yet (jittery framing); script still callable standalone |
-| **Phase 3** | Rink calibration | ✅ yes (tolerant of failure) | a (rink keypoints) | ❌ parked — HockeyRink doesn't transfer to roller rinks; needs 200-300 annotated frames |
+| **Phase 1** | Detect & track | ✅ yes | a (detect), b (teams), c (numbers) | ✅ implemented |
+| **Phase 2** | Rink calibration | ✅ yes (tolerant of failure) | a (rink keypoints) | 🚧 **HIGH PRIORITY** — HockeyRink doesn't transfer to roller rinks off the shelf; next step is a 200-300 frame roller-rink keypoint dataset + fine-tune. Unlocks the on-ice / off-ice geometric filter that downstream entity quality depends on. |
+| **Phase 3** | Entity recognition + final annotated MP4 | ✅ yes | a (entities), b (annotate) | ✅ implemented |
 | **Phase 4** | Event detection | ✅ yes (stub) | a (events) | ⏳ stub no-op — placeholder for goals / shots / fouls via temporal action models |
 | **Phase 5** | Statistics creation | ✅ yes (stub) | a (stats) | ⏳ stub no-op — placeholder for per-player / per-team aggregation |
 | **Phase 6** | Web platform | ❌ external | — | ⏳ later — FastAPI + Next.js consuming the `runs/runNN/` folders |
@@ -26,18 +26,23 @@ See `CLAUDE.md` for the full test log, design decisions, and open blockers.
   gates (`--skip-pN`, `--force`). Pass-through flags for backend / pose /
   OCR weights. Use this for normal end-to-end runs.
 
-Phase 1 stages (the identification sub-pipeline):
+Phase 1 stages (per-frame detection → per-track team / number):
 
 - **`src/p1_a_detect.py`** — detection + tracking. Outputs `p1_a_detections.json`.
 - **`src/p1_b_teams.py`** — team classification from per-track jersey color. Outputs `p1_b_teams.json` + `teams_preview.png`.
 - **`src/p1_c_numbers.py`** — jersey-number OCR via PARSeq. Outputs `p1_c_numbers.json`.
-- **`src/p1_d_entities.py`** — entity Re-ID clustering. Outputs `p1_d_entities.json`.
-- **`src/p1_e_annotate.py`** — final video annotation. Reads everything above; outputs `annotated.mp4`.
 
-Other phase scripts:
+Phase 2 — rink calibration (high-priority, in progress):
 
-- **`src/p2_a_followcam.py`** — broadcast follow-cam (parked: output not usable yet, opt-in via `--run-p2` in the orchestrator). Reads `p1_a_detections.json`; outputs `followcam.mp4`.
-- **`src/p3_a_rink.py`** — parked rink-calibration sanity check (kept for future Phase 3 work).
+- **`src/p2_a_rink.py`** — HockeyRink keypoint sanity check / future homography. Today HockeyRink doesn't transfer cleanly to roller rinks; orchestrator runs it tolerantly so the wiring is exercised end-to-end while the fine-tune dataset is being built.
+
+Phase 3 — entity recognition + final annotated MP4:
+
+- **`src/p3_a_entities.py`** — entity Re-ID clustering across fragmented Phase 1 tracks. Outputs `p3_a_entities.json`.
+- **`src/p3_b_annotate.py`** — final video annotation. Reads everything above; outputs `annotated.mp4`.
+
+Stubs:
+
 - **`src/p4_a_events.py`** — STUB. Writes `p4_a_events.json` marker.
 - **`src/p5_a_stats.py`** — STUB. Writes `p5_a_stats.json` marker.
 
@@ -74,18 +79,16 @@ python src/run_project.py videos/match.mp4 --output runs/run23 \
     --parseq-checkpoint models/parseq_hockey_rilh.pt
 
 # Skip a phase entirely:
-python src/run_project.py videos/match.mp4 --output runs/run23 --skip-p3 --skip-p4
-
-# Opt in to a parked phase (Phase 2 follow-cam is off by default):
-python src/run_project.py videos/match.mp4 --output runs/run23 --run-p2
+python src/run_project.py videos/match.mp4 --output runs/run30 --skip-p4 --skip-p5
 
 # Force re-run all stages even if their outputs already exist:
-python src/run_project.py videos/match.mp4 --output runs/run23 --force
+python src/run_project.py videos/match.mp4 --output runs/run30 --force
 ```
 
-By default Phase 1, 3, 4, 5 are ON and Phase 2 is OFF (parked: the
-follow-cam output isn't usable yet). Each stage is skipped if its output
-file exists (incremental re-runs cost nothing). The orchestrator
+By default every phase is ON. Each stage is skipped if its output
+file exists (incremental re-runs cost nothing). Phase 2 (rink) runs
+tolerantly while the fine-tune dataset is being built; if its
+keypoint detector fails, downstream phases continue. The orchestrator
 forwards backend / model flags to the relevant stage; everything else
 uses the stage script's own default.
 
@@ -151,59 +154,56 @@ generic STR (much weaker on jersey numbers). The checkpoint
 Tunables: `--samples-per-track` (default 15), `--ocr-min-conf`
 (default 0.30), `--pose-model`, `--debug-crops-dir`.
 
-### Phase 1 — stage d — Entities
+### Phase 2 — stage a — Rink calibration (high priority)
+
+> 🚧 In progress. HockeyRink (ice) doesn't transfer to roller rinks
+> off the shelf — the model recognises "a rink" but collapses every
+> keypoint into a small cluster instead of localising them. The next
+> step is a 200-300 frame roller-rink keypoint dataset + fine-tune.
+> The orchestrator runs this stage by default but tolerates the
+> failure so downstream phases keep going.
 
 ```bash
-python src/p1_d_entities.py \
+python src/p2_a_rink.py path/to/match.mp4 --output runs/match01
+```
+
+Once the fine-tune lands this stage will produce `p2_a_rink_keypoints.json`,
+which Stage 3.a will use as a geometric on-ice / off-ice filter — that's the
+single biggest expected fix for spectator pollution and ref leakage in
+entity recognition.
+
+### Phase 3 — stage a — Entities
+
+```bash
+python src/p3_a_entities.py \
   runs/match01/p1_a_detections.json \
   runs/match01/p1_b_teams.json \
   runs/match01/p1_c_numbers.json \
   path/to/match.mp4
-# writes runs/match01/p1_d_entities.json
+# writes runs/match01/p3_a_entities.json
 ```
 
-Collapses fragmented stage-a tracks into stable entities. Strategy: per-track
+Collapses fragmented stage-1.a tracks into stable entities. Strategy: per-track
 OSNet x0_25 medoid appearance embedding + greedy merge under hard constraints
 (same team, zero temporal overlap, no OCR conflict). Number-matching pairs
-get a 10× merge bonus. See `docs/p1_d_entities_design.md`.
+get a 10× merge bonus. See `docs/p3_a_entities_design.md`.
 
-On our 60 s test videos, ~200–400 stage-a tracks collapse to ~20–40 entities.
+On our 60 s test videos, ~200–400 stage-1.a tracks collapse to ~20–40 entities.
 
-### Phase 1 — stage e — Annotate
+### Phase 3 — stage b — Annotate
 
 ```bash
-python src/p1_e_annotate.py \
+python src/p3_b_annotate.py \
   runs/match01/p1_a_detections.json \
   runs/match01/p1_c_numbers.json \
   path/to/match.mp4 \
   --output runs/match01/annotated.mp4
-# auto-discovers p1_b_teams.json + p1_d_entities.json next to p1_a_detections.json if present
+# auto-discovers p1_b_teams.json + p3_a_entities.json next to p1_a_detections.json if present
 ```
 
 Final MP4 with team-coloured boxes, `t{id} {G|S} #NN` per-track labels
 (track id always shown), gray puck box, short traces. Pass
 `--debug-frames-dir` to also dump 1 frame every N for visual review.
-
-### Phase 2 — stage a — Virtual follow-cam (parked)
-
-> ⏸ Parked: the current cinematography output is jittery / mis-framed and
-> not usable. The orchestrator skips Phase 2 by default — pass `--run-p2`
-> to opt in. The standalone script still runs for direct iteration.
-
-```bash
-python src/p2_a_followcam.py runs/match01/p1_a_detections.json path/to/match.mp4 \
-  --output runs/match01/followcam.mp4 \
-  --zoom 2.0 \
-  --alpha 0.08 \
-  --debug-overlay
-```
-
-Tunables:
-- `--zoom` — 1.0 = full frame, 2.0 = show half width. Roller rinks are smaller than football pitches, so 2.0 is a good default.
-- `--alpha` — EMA smoothing (0.03 silky / 0.2 reactive). Roller hockey is fast — start at 0.08 and adjust.
-- `--puck-weight` — focus bias toward puck vs. players centroid (default 0.7).
-- `--polish-window` — second-pass moving average for extra polish (default 15 frames, set 1 to disable).
-- `--debug-overlay` — also produces a debug video showing focus point + crop rectangle on the source.
 
 ## Puck detection — two backends
 
@@ -225,13 +225,13 @@ On a typical 60s wide-angle clip (1920×1080 @ 60 fps):
 
 HockeyAI is slower (medium vs. nano) but the tracking output is dramatically cleaner and puck data is actually useful. Referees are excluded at the source.
 
-### Stage f still has fallbacks for puck gaps
+### Puck-gap handling downstream
 
-Even with HockeyAI, the puck is missed in ~50 % of frames. The follow-cam (`Stage 2.a`) handles this with:
-1. **Short-term puck memory** — uses last known puck position for ~15 frames after detection drops
-2. **Players-centroid fallback** — when the puck is lost too long, the camera tracks the cluster of players
-
-For near-perfect puck tracking, a roller-specific fine-tune is the next step (Phase 4 of the roadmap — see `CLAUDE.md`).
+Even with HockeyAI, the puck is missed in ~50 % of frames. Downstream stages
+that need a continuous puck signal (Phase 4 events, future virtual cam)
+will need short-term memory + players-centroid fallback like the previous
+follow-cam stage had. For near-perfect puck tracking, a roller-specific
+fine-tune is the next step (Phase 4 fine-tune — see `CLAUDE.md`).
 
 ## Tracking stability
 
@@ -242,14 +242,14 @@ With ~12 real entities on a roller rink (2 × (4 skaters + 1 goalie) + 1–2 ref
 | `--tracker bytetrack.yaml` (default) | 250 tracks | Baseline. |
 | `--tracker configs/bytetrack_tuned.yaml` | ~28 % fewer tracks | Longer memory (3 s buffer) + looser matching. |
 | `--tracker configs/botsort_reid.yaml` | similar count, longer individual tracks | BoT-SORT + GMC + ReID (appearance from YOLO backbone). |
-| **Stage 1.d entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
+| **Stage 3.a entity clustering** | **250 → 40 entities (run12), 167 → 24 (run13)** | Post-hoc OSNet embedding + team + non-overlap + OCR constraint. Works on top of any tracker. |
 
-None of these hit the ideal ~12 entities on fragmented source video. Stage 1.d takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues.
+None of these hit the ideal ~12 entities on fragmented source video. Stage 3.a takes you most of the way; the rest is capped by OCR recall on small/motion-blurred numbers and by ambiguous team colours — both source-quality issues. The next step (Phase 2 rink fine-tune → on-ice/off-ice geometric filter) is expected to drop spectator entities and ref leakage substantially.
 
 ## Workflow tips
 
 - Trim to a 60-second test clip first: `ffmpeg -i full_match.mp4 -ss 0 -t 60 -c copy clip.mp4`
-- Iterate stage-c / stage-e parameters on a single stage-a run — you don't need to re-detect each time
+- Iterate stage-1.c / stage-3.b parameters on a single stage-1.a run — you don't need to re-detect each time
 - Open `p1_a_detections.json` to inspect the data structure for custom analytics
 - The `--debug-overlay` output (Stage 2.a) is your best friend for understanding why the camera moves the way it does
 - Always pass `python -u` for long runs — stdout is block-buffered by default, which makes progress invisible

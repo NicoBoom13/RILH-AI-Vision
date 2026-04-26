@@ -1,4 +1,11 @@
-# Phase 1.6 — Design doc
+# Stage 3.a (Entities) — Design doc
+
+> Originally written as "Phase 1.6 design doc" before the project's
+> phase-numbering settled. The stage was Stage 1.d in the previous
+> structure (entities under Phase 1), and is now Stage 3.a under
+> Phase 3 (Entity recognition). The rink-aware on-ice/off-ice filter
+> mentioned below is the work that promoted rink calibration into the
+> new Phase 2.
 
 ## 1. Objectif
 
