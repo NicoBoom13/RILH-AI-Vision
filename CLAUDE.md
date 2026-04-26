@@ -394,6 +394,20 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
+- **run24–run29** — full Phase 1 → Phase 5 validation of the freshly
+  fine-tuned `parseq_hockey_rilh.pt` (the run23 model trained on 6 videos)
+  across all six dataset videos. Total wall-clock 3h54m on MPS, sequential.
+  Per-video summary (tracks → entities, numbered tracks):
+    • run24 (clip60)   : 343 → 33,  37 numbered (10.8 %)
+    • run25 (clip60-2) : 433 → 37,  29 numbered ( 6.7 %)
+    • run26 (Video 04) : 167 → 24,  28 numbered (16.8 %)  [30fps, 30s]
+    • run27 (Video 05) : 435 → 37,  41 numbered ( 9.4 %)
+    • run28 (Video 06) : 475 → 40,  72 numbered (15.2 %)  [highest — FT'd on it]
+    • run29 (Video 07) : 396 → 35,  31 numbered ( 7.8 %)
+  All six runs produced the full artefact set (annotated.mp4 +
+  p1_a..d.json + p4/p5 stubs + teams_preview.png). Phase 2 stayed off
+  (parked), Phase 3 skipped (parked). No regressions on the historic
+  4-video set. Confirms the parking + merge-mode + new model deploy.
 - **run23** — extends the RILH jersey dataset with **Video 06 (Grenoble vs
   Varces)** and **Video 07 (Garges vs Rouen)**. New `--frame-stride 10`
   flag on Stage 1.c densifies sampling for dataset use (uniform temporal
