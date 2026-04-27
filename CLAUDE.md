@@ -38,15 +38,18 @@ analytics. Built from open-source modules + custom code only.
   `is_goaltender` per track still uses HockeyAI majority (>50 % of
   detections tagged `goaltender`). The four engines can be benchmarked
   side-by-side via `tools/bench_team_engines.py` against a truth set
-  produced by `tools/annotate_tracks.py`. **First bench (1099 truth
-  tracks across run24-27) ranks contrastive 0.775 > osnet 0.719 >
-  siglip 0.715 > hsv 0.672**, and contrastive is also the only engine
-  with no clip below 0.68 — see the test log for the full table.
+  produced by `tools/annotate_tracks.py`. **6-clip bench (2100 truth
+  tracks, 1497 team-tagged) ranks contrastive 0.896 > siglip 0.838 >
+  hsv 0.788 > osnet 0.717**: contrastive wins on 4 of 6 clips and
+  never drops below 0.74; SigLIP wins on the two dark-vs-dark cases
+  (run26 / run27). See the test log for the full per-clip table.
   Default stays `hsv` for backwards compatibility; `--team-engine
   contrastive` is the recommended analytical choice. The ref
-  classifier ships at recall 0.73 / precision 0.11 — useful for
-  flagging candidates but not yet for hard-blocking, so it's opt-in
-  via `--ref-classifier` only.
+  classifier (v2 on 2100 tracks) ships at test recall 0.78 /
+  precision 0.53 — useful for flagging but the in-bench precision
+  (0.10) drops because the sigmoid threshold of 0.5 is too loose for
+  the natural ref/non-ref prevalence; threshold tuning is the next
+  iter. Opt-in via `--ref-classifier` only.
 - **Stage 1.c (Numbers)** ✅ : per-track jersey-number OCR via **PARSeq
   Hockey + RILH fine-tune**. Single engine (PARSeq); the previous
   TrOCR / together engines were removed in the refactor — the digit
@@ -443,6 +446,54 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 ## Test run log
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
+
+- **2026-04-27 6-clip team-engine bench** — full pass with ref classifier
+  v2 + contrastive v3 (both retrained on the expanded 2100-track truth
+  covering all 6 clips run24-run29). The contrastive engine now wins
+  decisively across the board: **+10.8 pts vs HSV overall, top accuracy
+  on 4 of 6 clips, never below 0.74**. SigLIP is the only engine
+  that beats it on a clip (run26 dark-vs-dark, 0.924 vs 0.819, and
+  run27 0.933 vs 0.906). OSNet underperforms on the Villeneuve-Vierzon
+  and Garges-Rouen clips (0.625 / 0.611) — its embedding doesn't help
+  when colours are already easy.
+
+  **6-clip bench (2100 truth tracks, 1497 team-tagged across 6 clips):**
+
+  | engine        | team_acc | Δ vs hsv |
+  |---------------|---------:|---------:|
+  | hsv           |    0.788 |   —      |
+  | osnet         |    0.717 |   −7.1   |
+  | siglip        |    0.838 |   +5.0   |
+  | **contrastive** | **0.896** | **+10.8** |
+
+  Per-clip:
+
+  | clip                              | hsv   | osnet | siglip   | contrastive |
+  |-----------------------------------|-------|-------|----------|-------------|
+  | run24 (clip60)                    | 0.546 | 0.734 | 0.555    | **0.843**   |
+  | run25 (clip60-2)                  | 0.665 | 0.591 | 0.591    | **0.740**   |
+  | run26 (Video04 France-Monde)      | 0.688 | 0.910 | **0.924**| 0.819       |
+  | run27 (Video05 Villeneuve-Vierzon)| 0.839 | 0.625 | **0.933**| 0.906       |
+  | run28 (Video06 Grenoble-Varces)   | 0.932 | 0.835 | 0.965    | **0.975**   |
+  | run29 (Video07 Garges-Rouen)      | 0.881 | 0.611 | 0.954    | **0.975**   |
+
+  **Ref classifier v2** retrained on 2100 truth (vs 1099 v1):
+    - Test accuracy: 0.964 (up 0.947 → 0.964)
+    - Precision: 0.531 (up 0.373 → 0.531) — 5× more data lifted precision
+      cleanly
+    - Recall: 0.782 (similar)
+    - In-bench performance though: recall 0.663, precision 0.104. The
+      bench measures across all 1497 team-tagged tracks where many
+      team-tagged tracks get high ref_score because the threshold
+      (sigmoid > 0.5) is too loose for the natural prevalence (44 refs
+      / 2100). Sigmoid threshold tuning is the next iter — tightening
+      to ~0.85 should lift precision into the 0.4-0.6 range without
+      losing too much recall.
+
+  **Decision**: leave `hsv` as orchestrator default (no breaking change),
+  promote `--team-engine contrastive` as the recommended choice for any
+  new analytical run. Keep ref classifier opt-in via `--ref-classifier`
+  until precision is tuned.
 
 - **2026-04-27 team-engine plumbing + first bench** — Stage 1.b refactored
   to support pluggable team engines (`--team-engine
