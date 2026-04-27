@@ -126,26 +126,36 @@ def preprocess(bgr, grayscale=False):
 
 
 class TripletDataset(Dataset):
-    """Each item is an (anchor, positive, negative) triplet where:
-      - anchor and positive are crops from tracks with the SAME team label
-      - negative is a crop from a track with the DIFFERENT team label
-    50 % of triplets are emitted in grayscale (independently per crop)
-    so the model learns configural cues, not just colour."""
-    def __init__(self, by_team, n_triplets=4000, gray_prob=0.5, seed=0):
-        self.by_team = by_team   # {"A": [path, path, ...], "B": [...]}
+    """Each item is an (anchor, positive, negative) triplet where all
+    three crops come from THE SAME CLIP (intra-clip), so the team-label
+    convention (A/B = left/right team in that specific match) stays
+    consistent inside the triplet. 50 % of triplets are emitted in
+    grayscale (independently per triplet) so the model learns shape /
+    pattern cues alongside colour — Koshkina's load-bearing trick.
+
+    by_clip: ``{clip: {"A": [path, ...], "B": [path, ...]}}``."""
+    def __init__(self, by_clip, n_triplets=4000, gray_prob=0.5, seed=0):
         self.gray_prob = gray_prob
         self.rng = random.Random(seed)
         self.triplets = []
-        teams = list(by_team.keys())
-        if len(teams) < 2:
-            raise SystemExit("Need at least 2 distinct team labels")
+        clips = list(by_clip.keys())
+        if not clips:
+            raise SystemExit("Need at least 1 eligible clip with both teams")
+        # Sample clips proportional to their pair-count budget
+        # (prevents one big clip from monopolising the triplets).
+        weights = []
+        for c in clips:
+            a, b = len(by_clip[c]["A"]), len(by_clip[c]["B"])
+            weights.append(min(a, b) * (a + b))
         for _ in range(n_triplets):
-            tA = self.rng.choice(teams)
-            tB = self.rng.choice([t for t in teams if t != tA])
-            if len(by_team[tA]) < 2 or not by_team[tB]:
+            c = self.rng.choices(clips, weights=weights)[0]
+            roster = by_clip[c]
+            tA = self.rng.choice(["A", "B"])
+            tB = "B" if tA == "A" else "A"
+            if len(roster[tA]) < 2 or not roster[tB]:
                 continue
-            a, p = self.rng.sample(by_team[tA], 2)
-            n = self.rng.choice(by_team[tB])
+            a, p = self.rng.sample(roster[tA], 2)
+            n = self.rng.choice(roster[tB])
             gray = self.rng.random() < gray_prob
             self.triplets.append((a, p, n, gray))
     def __len__(self):
@@ -164,18 +174,23 @@ def list_thumbs(thumbs_dir, run, tid):
 
 
 def collect_truth_team_crops(truth_path, thumbs_dir):
-    """Group thumbnail paths by team label across all clips. Returns
-    {"A": [path, ...], "B": [path, ...]} — refs and X tracks excluded.
-    Note: A/B is per-clip (the annotator's "left vs right team"
-    convention) but for training we treat A as one consistent class
-    and B as another. This breaks if clips have wildly different team
-    distributions — but with 6 clips it's fine and the cluster
-    assignment is permutation-invariant at inference time anyway."""
+    """Group thumbnail paths by clip + team. Returns nested dict
+    ``{clip: {"A": [path, ...], "B": [path, ...]}}`` — refs and X
+    tracks excluded.
+
+    A/B labels are PER-CLIP (annotator's "left vs right team"
+    convention), so triplets must stay intra-clip — pairing an A-track
+    from run24 (where A is, say, dark blue) with an A-track from run25
+    (where A is white) is meaningless. The model should learn
+    *intra-clip* team separation; at inference k=2 k-means picks the
+    two cluster centroids per clip and the absolute label is
+    permutation-invariant. Returns None if too few labelled tracks
+    in any single clip to form meaningful triplets."""
     if not truth_path.exists():
         return None
     truth = json.loads(truth_path.read_text())["tracks"]
-    by_team = {"A": [], "B": []}
-    n_tracks_per_team = {"A": 0, "B": 0}
+    by_clip = {}
+    track_counts = {}
     for key, meta in truth.items():
         if "/" not in key:
             continue
@@ -188,28 +203,41 @@ def collect_truth_team_crops(truth_path, thumbs_dir):
         except ValueError:
             continue
         thumbs = list_thumbs(thumbs_dir, run, tid)
-        if thumbs:
-            by_team[team].extend(thumbs)
-            n_tracks_per_team[team] += 1
-    return by_team if n_tracks_per_team["A"] >= 4 \
-                       and n_tracks_per_team["B"] >= 4 else None
+        if not thumbs:
+            continue
+        by_clip.setdefault(run, {"A": [], "B": []})
+        by_clip[run][team].extend(thumbs)
+        track_counts.setdefault(run, {"A": 0, "B": 0})[team] += 1
+
+    # Drop clips that don't have at least 2 tracks per team — can't
+    # form a triplet (anchor + positive + negative) without that.
+    eligible = {c: by_clip[c] for c, tc in track_counts.items()
+                if tc["A"] >= 2 and tc["B"] >= 2}
+    if len(eligible) < 1:
+        return None
+    return eligible
 
 
-def evaluate_split(model, by_team, device, n_pairs=200, seed=0):
-    """Held-out evaluation: sample n_pairs (same_team, diff_team)
-    pairs, embed, check whether same-team distance < diff-team distance.
-    Returns the % of pairs satisfied — a coarse-but-honest signal of
-    whether the embedding actually separates teams."""
+def evaluate_split(model, by_clip, device, n_pairs=200, seed=0):
+    """Held-out evaluation, intra-clip: sample n_pairs
+    (anchor, positive, negative) triplets all from the same clip,
+    embed, check whether anchor-positive distance < anchor-negative.
+    Returns the % of triplets satisfied — coarse but honest signal of
+    intra-clip team separation in the learned embedding."""
     rng = random.Random(seed)
-    teams = list(by_team.keys())
+    clips = list(by_clip.keys())
+    if not clips:
+        return 0.0
     correct = 0
     for _ in range(n_pairs):
-        tA = rng.choice(teams)
-        tB = rng.choice([t for t in teams if t != tA])
-        if len(by_team[tA]) < 2 or not by_team[tB]:
+        c = rng.choice(clips)
+        roster = by_clip[c]
+        tA = rng.choice(["A", "B"])
+        tB = "B" if tA == "A" else "A"
+        if len(roster[tA]) < 2 or not roster[tB]:
             continue
-        a, p = rng.sample(by_team[tA], 2)
-        n = rng.choice(by_team[tB])
+        a, p = rng.sample(roster[tA], 2)
+        n = rng.choice(roster[tB])
         with torch.no_grad():
             za = model(preprocess(cv2.imread(str(a))).unsqueeze(0).to(device))
             zp = model(preprocess(cv2.imread(str(p))).unsqueeze(0).to(device))
@@ -242,29 +270,35 @@ def main():
 
     truth_path = Path(args.truth)
     thumbs_dir = Path(args.thumbs_dir)
-    by_team = collect_truth_team_crops(truth_path, thumbs_dir)
-    if by_team is None:
+    by_clip = collect_truth_team_crops(truth_path, thumbs_dir)
+    if by_clip is None:
         raise SystemExit(
             f"Need labelled team crops at {truth_path}.\n"
-            f"Run tools/annotate_tracks.py to label at least 4 tracks per team\n"
-            f"across the existing run folders, then retry.")
+            f"Run tools/annotate_tracks.py to label at least 2 tracks per team\n"
+            f"in at least one clip, then retry.")
 
     print(f"Truth: {truth_path}")
-    print(f"  team A: {len(by_team['A'])} crops")
-    print(f"  team B: {len(by_team['B'])} crops")
+    for c in sorted(by_clip):
+        print(f"  {c}: A={len(by_clip[c]['A'])} crops, "
+              f"B={len(by_clip[c]['B'])} crops")
 
     rng = random.Random(args.seed)
-    # Hold out 15 % of crops per team for eval. Stratified by team.
-    holdout = {}
-    train_by_team = {}
-    for team, crops in by_team.items():
-        crops_shuffled = list(crops)
-        rng.shuffle(crops_shuffled)
-        n_hold = max(1, int(len(crops_shuffled) * 0.15))
-        holdout[team] = crops_shuffled[:n_hold]
-        train_by_team[team] = crops_shuffled[n_hold:]
-    print(f"Train: A={len(train_by_team['A'])}, B={len(train_by_team['B'])}")
-    print(f"Held-out: A={len(holdout['A'])}, B={len(holdout['B'])}")
+    # Hold out 15 % of crops per team per clip for eval, stratified
+    # by team. Triplets stay intra-clip on both train and eval sides.
+    train_by_clip, holdout_by_clip = {}, {}
+    for clip, roster in by_clip.items():
+        train_by_clip[clip] = {"A": [], "B": []}
+        holdout_by_clip[clip] = {"A": [], "B": []}
+        for team, crops in roster.items():
+            crops_shuffled = list(crops)
+            rng.shuffle(crops_shuffled)
+            n_hold = max(1, int(len(crops_shuffled) * 0.15))
+            holdout_by_clip[clip][team] = crops_shuffled[:n_hold]
+            train_by_clip[clip][team] = crops_shuffled[n_hold:]
+    n_train = sum(len(r["A"]) + len(r["B"]) for r in train_by_clip.values())
+    n_hold = sum(len(r["A"]) + len(r["B"]) for r in holdout_by_clip.values())
+    print(f"Train: {n_train} crops across {len(train_by_clip)} clips")
+    print(f"Held-out: {n_hold} crops")
 
     device = pick_device()
     print(f"Device: {device}")
@@ -276,12 +310,12 @@ def main():
           f"batch={args.batch_size}, gray_prob={args.gray_prob}, "
           f"margin={args.margin})…")
     eval_log = []
-    base_acc = evaluate_split(model, holdout, device, seed=args.seed)
+    base_acc = evaluate_split(model, holdout_by_clip, device, seed=args.seed)
     print(f"  baseline (random init) holdout pair-acc = {base_acc:.3f}")
     eval_log.append({"epoch": 0, "holdout_pair_acc": base_acc})
 
     for epoch in range(1, args.epochs + 1):
-        ds = TripletDataset(train_by_team, n_triplets=args.n_triplets,
+        ds = TripletDataset(train_by_clip, n_triplets=args.n_triplets,
                             gray_prob=args.gray_prob, seed=args.seed + epoch)
         loader = DataLoader(ds, batch_size=args.batch_size, shuffle=True,
                             num_workers=0)
@@ -299,7 +333,8 @@ def main():
             n_batches += 1
         avg = epoch_loss / max(n_batches, 1)
         if epoch == 1 or epoch % 5 == 0 or epoch == args.epochs:
-            acc = evaluate_split(model, holdout, device, seed=args.seed + epoch)
+            acc = evaluate_split(model, holdout_by_clip, device,
+                                 seed=args.seed + epoch)
             print(f"  epoch {epoch:3d}  loss={avg:.4f}  "
                   f"holdout pair-acc={acc:.3f}")
             eval_log.append({"epoch": epoch, "loss": avg,
@@ -315,10 +350,11 @@ def main():
             "trained_at": datetime.datetime.now().isoformat(),
             "epochs": args.epochs,
             "lr": args.lr,
-            "n_train_crops_a": len(train_by_team["A"]),
-            "n_train_crops_b": len(train_by_team["B"]),
-            "n_holdout_crops_a": len(holdout["A"]),
-            "n_holdout_crops_b": len(holdout["B"]),
+            "n_train_clips": len(train_by_clip),
+            "n_train_crops": n_train,
+            "n_holdout_crops": n_hold,
+            "per_clip_train": {c: {"A": len(r["A"]), "B": len(r["B"])}
+                                for c, r in train_by_clip.items()},
             "gray_prob": args.gray_prob,
             "margin": args.margin,
             "eval_log": eval_log,

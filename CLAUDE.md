@@ -38,8 +38,15 @@ analytics. Built from open-source modules + custom code only.
   `is_goaltender` per track still uses HockeyAI majority (>50 % of
   detections tagged `goaltender`). The four engines can be benchmarked
   side-by-side via `tools/bench_team_engines.py` against a truth set
-  produced by `tools/annotate_tracks.py`. The default stays `hsv` —
-  no behaviour change for existing pipelines until the user opts in.
+  produced by `tools/annotate_tracks.py`. **First bench (1099 truth
+  tracks across run24-27) ranks contrastive 0.775 > osnet 0.719 >
+  siglip 0.715 > hsv 0.672**, and contrastive is also the only engine
+  with no clip below 0.68 — see the test log for the full table.
+  Default stays `hsv` for backwards compatibility; `--team-engine
+  contrastive` is the recommended analytical choice. The ref
+  classifier ships at recall 0.73 / precision 0.11 — useful for
+  flagging candidates but not yet for hard-blocking, so it's opt-in
+  via `--ref-classifier` only.
 - **Stage 1.c (Numbers)** ✅ : per-track jersey-number OCR via **PARSeq
   Hockey + RILH fine-tune**. Single engine (PARSeq); the previous
   TrOCR / together engines were removed in the refactor — the digit
@@ -437,18 +444,64 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
-- **2026-04-27 team-engine plumbing** — Stage 1.b refactored to support
-  pluggable team engines (`--team-engine {hsv,osnet,siglip,contrastive}`)
-  + an orthogonal `--ref-classifier` flag. Default stays `hsv` so every
-  prior run reproduces unchanged. Three new engines shipped wired-up;
-  the contrastive engine needs `models/contrastive_team_rilh.pt`
-  (trained via `tools/finetune_contrastive_team.py` from the truth set
-  produced by `tools/annotate_tracks.py`). Bench harness
-  `tools/bench_team_engines.py` re-runs only Stage 1.b (detections
-  stay cached) and writes engine-tagged `p1_b_teams_<engine>.json` so
-  no canonical output is overwritten. Scoring is permutation-invariant
-  per Koshkina 2021. Pending the user's annotation pass + the bench
-  run; numbers will land in this log when they're in.
+- **2026-04-27 team-engine plumbing + first bench** — Stage 1.b refactored
+  to support pluggable team engines (`--team-engine
+  {hsv,osnet,siglip,contrastive}`) + an orthogonal `--ref-classifier`
+  flag. Default stays `hsv` so every prior run reproduces unchanged.
+  Three new engines shipped wired-up; the contrastive engine needs
+  `models/contrastive_team_rilh.pt` (trained via
+  `tools/finetune_contrastive_team.py` from the truth set produced by
+  `tools/annotate_tracks.py`). Bench harness `tools/bench_team_engines.py`
+  re-runs only Stage 1.b (detections stay cached) and writes engine-
+  tagged `p1_b_teams_<engine>.json` so no canonical output is
+  overwritten. Scoring is permutation-invariant per Koshkina 2021.
+
+  **First bench results — 4 engines × ref on/off, 1099 truth tracks
+  across run24-run27 (run28/29 not yet annotated):**
+
+  | engine        | team_acc | Δ vs hsv | best clip                   |
+  |---------------|---------:|---------:|------------------------------|
+  | hsv           |    0.672 |   —      | run27 (0.838) Villeneuve-Vierzon (clear colours) |
+  | osnet         |    0.719 | +4.7 pt  | run26 (0.910) France-Monde (dark-vs-dark)        |
+  | siglip        |    0.715 | +4.3 pt  | run26 (0.924) — narrow win over osnet on dark-vs-dark |
+  | **contrastive** | **0.775** | **+10.3 pt** | run24 (0.755), run25 (0.684), run27 (0.862) — most consistent across clips |
+
+  Per-clip table:
+
+  | clip  | hsv   | osnet | siglip | contrastive |
+  |-------|-------|-------|--------|-------------|
+  | run24 | 0.546 | 0.734 | 0.555  | **0.755**   |
+  | run25 | 0.665 | 0.591 | 0.591  | **0.684**   |
+  | run26 | 0.688 | 0.910 | **0.924** | 0.840    |
+  | run27 | 0.838 | 0.701 | **0.916** | 0.862    |
+
+  Verdict: **contrastive is the new default candidate** (best overall,
+  no clip below 0.68). Add the Koshkina 50 % grayscale aug + intra-clip
+  triplet sampling — the v1 trainer cross-clip triplets failed to
+  converge (holdout pair-acc 0.485, worse than random) because the A/B
+  label is per-clip and absolute identity isn't preserved across
+  clips; v2 enforces intra-clip triplets and converges cleanly.
+
+  **Ref classifier** (`models/ref_classifier_rilh.pt`, 512 → 64 → 1
+  MLP head on frozen OSNet x0_25 embeddings, 30 epochs):
+    - Test accuracy: 0.947
+    - **Recall: 0.734** (catches 27 of 37 truth refs across the 4 clips)
+    - **Precision: 0.110** (false alarm rate is high — every engine
+      gets the same 0.11 number because the head doesn't depend on the
+      team engine)
+    - Verdict: **needs work before going to default.** 73 % of refs
+      caught is great, but 89 % of "ref" tags wrong means we'd pollute
+      the player buckets if we hard-blocked them. Likely fixes:
+      (a) raise the sigmoid threshold above 0.5 to trade recall for
+      precision; (b) more ref training tracks (only 44 in current
+      truth); (c) add a ref re-confirmation via temporal majority
+      across the track.
+
+  **What's next**: keep `hsv` as the orchestrator default for now (no
+  regression for unbenched setups), but `--team-engine contrastive`
+  for any new analytical run. Re-run the bench when run28/run29
+  truth lands. Iterate the ref classifier threshold separately
+  before flipping it on by default.
 - **2026-04-26 restructure** — phase numbering rewritten so the
   pipeline reads in causal order: detection → rink → entity → events
   → stats. **Phase 2 (Virtual follow-cam) removed** (output wasn't
