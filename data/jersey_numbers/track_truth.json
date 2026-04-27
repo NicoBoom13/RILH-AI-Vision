@@ -1,0 +1,4408 @@
+{
+  "metadata": {
+    "n_a": 404,
+    "n_b": 351,
+    "n_other": 300,
+    "n_referee": 44,
+    "n_total": 1099,
+    "produced_by": "tools/annotate_tracks.py"
+  },
+  "tracks": {
+    "run24/1": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/10": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/1002": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1011": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1016": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1017": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1020": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1021": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/1027": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1045": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1046": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1062": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1065": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1074": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1075": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1076": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1080": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1096": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1097": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1099": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1104": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1106": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1113": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1123": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1127": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1132": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1138": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1139": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/114": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1140": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1141": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1142": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1143": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1150": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1153": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1164": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1170": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1184": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1198": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/12": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1212": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1214": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1223": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1225": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/123": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1230": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1240": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1243": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1247": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1258": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1269": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1270": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1275": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1279": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1280": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1281": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/1283": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1285": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1286": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1287": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1288": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/1290": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1292": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1296": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1298": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1299": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1303": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/1307": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/132": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/1353": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1357": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/1359": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1362": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1365": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1369": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/1371": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/148": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/154": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/160": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/162": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/164": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/165": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/191": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/195": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/198": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/2": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/205": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/206": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/208": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/21": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/216": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/218": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/221": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/223": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/225": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/228": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/230": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/232": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/234": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/236": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/237": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/239": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/253": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/269": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/27": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/28": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/281": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/283": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/284": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/290": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/3": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/320": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/321": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/323": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/324": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/328": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/333": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/334": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/344": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/345": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/347": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/349": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/352": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/367": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/368": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/369": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/379": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/383": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/39": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/393": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/4": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/400": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/402": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/416": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/418": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/421": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/426": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/429": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/432": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/447": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/456": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/464": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/470": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/473": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/476": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/481": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/483": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/484": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/489": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/490": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/492": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/493": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/494": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/498": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/5": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/505": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/507": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/511": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/516": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/517": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/518": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/521": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/525": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/528": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/530": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/532": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/533": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/534": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/535": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/536": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/540": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/541": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/542": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/543": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/545": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/546": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/547": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/548": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/549": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/55": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/553": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/556": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/558": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/559": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/562": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/565": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/566": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/568": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/571": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/572": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/573": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/574": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/583": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/586": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/59": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/6": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/60": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/617": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/630": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/631": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/632": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/643": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/644": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/648": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/650": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/661": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/672": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/677": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/683": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/684": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/69": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/690": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/694": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/697": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/7": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/703": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/709": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/715": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/719": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/728": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/73": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/731": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/733": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/739": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/749": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/755": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/759": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/77": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/773": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/775": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/78": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/780": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/784": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/785": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/79": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/791": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/795": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/8": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/80": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/803": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/804": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/809": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/81": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/811": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/813": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/814": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/82": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/824": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/834": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/836": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/838": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/839": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/863": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/87": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/896": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/897": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/898": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/899": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/9": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/900": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/901": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/902": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/904": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/914": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/922": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/926": {
+      "is_referee": false,
+      "team": null
+    },
+    "run24/931": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/934": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/936": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/942": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/943": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/948": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/951": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/952": {
+      "is_referee": true,
+      "team": null
+    },
+    "run24/96": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/966": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/975": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/981": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run24/985": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run24/997": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1000": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1014": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1017": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1019": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/102": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1027": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1028": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1047": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1082": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1085": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1094": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/11": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1103": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1126": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1128": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1129": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1133": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1145": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1151": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1158": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/116": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1161": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1162": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1163": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1170": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1172": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1174": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1175": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1181": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1182": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/12": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1202": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1203": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1204": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1206": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1211": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1226": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1229": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1234": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/124": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1240": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1248": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1252": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1253": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1255": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1268": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1279": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/129": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/13": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1305": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1320": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1321": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1326": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/133": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1331": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1352": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1355": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1364": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1365": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1371": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1379": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/138": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1387": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1388": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1391": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/14": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/141": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1415": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/142": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1428": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1431": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1432": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1433": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1435": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1436": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1437": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1438": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1440": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1441": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1442": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1443": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1444": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1449": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1452": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1459": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1460": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1466": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1468": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1470": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1474": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1481": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1482": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1489": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/149": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1491": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/15": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1508": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1511": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1514": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1525": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/153": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1535": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1537": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1547": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1552": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1557": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/156": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1564": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1568": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1569": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/157": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1570": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1579": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1587": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/159": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/16": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1601": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1607": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1609": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1611": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1613": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1614": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1616": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1618": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1619": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1620": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1622": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1629": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1634": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1635": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1636": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1637": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1640": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1643": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1650": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1653": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1658": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/166": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1660": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1661": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1667": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1669": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/167": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1670": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1671": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1674": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1691": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1719": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1737": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/176": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/177": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1775": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/178": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1785": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1797": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/181": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1812": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/1825": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1827": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1843": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1845": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/185": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/187": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1871": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1877": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1882": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1883": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1884": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1885": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1886": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1887": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1888": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1893": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1895": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1896": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/19": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1901": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1906": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1907": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1908": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1912": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1913": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1915": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1916": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1917": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1918": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1919": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1923": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1926": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1927": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1938": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1939": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/194": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1941": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1943": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1946": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1947": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1948": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1952": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1956": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1960": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1961": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1963": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1964": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1971": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1973": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1975": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/1979": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/1985": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2004": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2007": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/201": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2010": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/2015": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/2016": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/2017": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/2019": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/2020": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2029": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/2039": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/2040": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/2043": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/2044": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/214": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/222": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/234": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/237": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/238": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/242": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/243": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/245": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/246": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/250": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/254": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/255": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/256": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/260": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/261": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/262": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/265": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/269": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/273": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/275": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/279": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/28": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/280": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/281": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/283": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/284": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/29": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/3": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/305": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/306": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/308": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/313": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/314": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/315": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/321": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/325": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/326": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/327": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/332": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/333": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/334": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/337": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/338": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/339": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/340": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/341": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/342": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/344": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/355": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/367": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/373": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/383": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/385": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/391": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/396": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/4": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/401": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/409": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/412": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/413": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/424": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/425": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/446": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/448": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/468": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/471": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/475": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/481": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/482": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/489": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/5": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/52": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/521": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/522": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/527": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/529": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/532": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/535": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/539": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/546": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/550": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/559": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/561": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/562": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/566": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/57": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/572": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/573": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/577": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/581": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/582": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/583": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/585": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/6": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/600": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/601": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/602": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/603": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/607": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/609": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/612": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/622": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/633": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/64": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/646": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/648": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/654": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/66": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/673": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/674": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/675": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/682": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/694": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/7": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/707": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/71": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/716": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/729": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/739": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/741": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/768": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/773": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/774": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/778": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/784": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/785": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/788": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/792": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/794": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/795": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/796": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/803": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/804": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/805": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/806": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/807": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/809": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/812": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/818": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/821": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/822": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/826": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/835": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/837": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/840": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/842": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/845": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/846": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/847": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/849": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/85": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/856": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/860": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/865": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/87": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/870": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/871": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/872": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/873": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/876": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/877": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/882": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/885": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/886": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/893": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/898": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/899": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/904": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/907": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/917": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/920": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/928": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/935": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/936": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/941": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/947": {
+      "is_referee": true,
+      "team": null
+    },
+    "run25/948": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/950": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/952": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/957": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/959": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/966": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/968": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/970": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/973": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/978": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/981": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/982": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/986": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run25/987": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/99": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/990": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/991": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run25/993": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/994": {
+      "is_referee": false,
+      "team": null
+    },
+    "run25/995": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1009": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1014": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1020": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1023": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1033": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1056": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/108": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1093": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/110": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1104": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1105": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1107": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1108": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1116": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1123": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1129": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1140": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1144": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1149": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/115": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1167": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1168": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1169": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/1172": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/118": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1184": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1185": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1188": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1195": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1197": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1209": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1224": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1254": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1270": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1283": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1296": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/130": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1302": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1307": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/131": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/1313": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1318": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1329": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1334": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1335": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1339": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1362": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1381": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1398": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1400": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1401": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1413": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1434": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1441": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1442": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1444": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1454": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/146": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1468": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1470": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1473": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1479": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1480": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1489": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1491": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1493": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1499": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1521": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1539": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1546": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1579": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/1582": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1584": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1592": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1597": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1600": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1604": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1606": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/1607": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/1609": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1625": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/1645": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/185": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/2": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/204": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/212": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/239": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/241": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/275": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/28": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/287": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/293": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/3": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/328": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/367": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/386": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/388": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/4": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/406": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/407": {
+      "is_referee": true,
+      "team": null
+    },
+    "run26/428": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/446": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/449": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/455": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/458": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/466": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/476": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/497": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/5": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/528": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/567": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/591": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/596": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/6": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/61": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/613": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/618": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/619": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/623": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/631": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/632": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/637": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/64": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/641": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/679": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/7": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/711": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/712": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/722": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/747": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/757": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/761": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/768": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/770": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/793": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/795": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/807": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/808": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/814": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/827": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/828": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/843": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/847": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/852": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/861": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/870": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/878": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/879": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run26/881": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/885": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/889": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/9": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/928": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/939": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/949": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/963": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run26/968": {
+      "is_referee": false,
+      "team": null
+    },
+    "run26/99": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/1": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/108": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/109": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/11": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/12": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/122": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/134": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/137": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/15": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/157": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/159": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/163": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/164": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/165": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/167": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/168": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/17": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/171": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/173": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/174": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/175": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/183": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/184": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/186": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/188": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/190": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/191": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/192": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/193": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/194": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/2": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/20": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/201": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/207": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/208": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/210": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/211": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/214": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/220": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/222": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/223": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/224": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/226": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/227": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/24": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/246": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/250": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/269": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/28": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/281": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/285": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/287": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/290": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/291": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/293": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/294": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/297": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/298": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/3": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/30": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/300": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/303": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/31": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/310": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/311": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/319": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/33": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/330": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/332": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/335": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/338": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/343": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/350": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/351": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/354": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/358": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/359": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/36": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/363": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/366": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/368": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/37": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/370": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/372": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/375": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/38": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/380": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/39": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/392": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/4": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/411": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/414": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/416": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/44": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/46": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/470": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/49": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/499": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/5": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/501": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/502": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/504": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/505": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/51": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/517": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/529": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/530": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/544": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/561": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/562": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/59": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/597": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/598": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/599": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/6": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/600": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/601": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/605": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/607": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/620": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/633": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/641": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/648": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/649": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/650": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/652": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/655": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/657": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/66": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/675": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/683": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/7": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/700": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/721": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/725": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/727": {
+      "is_referee": true,
+      "team": null
+    },
+    "run27/729": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/730": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/734": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/746": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/753": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/754": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/759": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/764": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/765": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/766": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/767": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/773": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/775": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/781": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/782": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/783": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/784": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/785": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/788": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/789": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/790": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/792": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/793": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/794": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/796": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/797": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/799": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/804": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/806": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/815": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/818": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/826": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/828": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/829": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/831": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/832": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/835": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/836": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/839": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/840": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/843": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/847": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/848": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/849": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/850": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/851": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/852": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/853": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/854": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/856": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/866": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/867": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/868": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/87": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/870": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/871": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/873": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/874": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/875": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/876": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/877": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/879": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/880": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/881": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/883": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/884": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/887": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/888": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/890": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/891": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/892": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/893": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/897": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/9": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/906": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/909": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/918": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/921": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/923": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/924": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/926": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/928": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/929": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/930": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/931": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/932": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/933": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/937": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/940": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/943": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/951": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/952": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/953": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/954": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/955": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/958": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/963": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/970": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/971": {
+      "is_referee": false,
+      "team": "B"
+    },
+    "run27/973": {
+      "is_referee": false,
+      "team": null
+    },
+    "run27/977": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/979": {
+      "is_referee": false,
+      "team": "A"
+    },
+    "run27/980": {
+      "is_referee": false,
+      "team": null
+    }
+  }
+}
