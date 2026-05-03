@@ -37,6 +37,21 @@ TEAM_COLORS = [
     sv.Color(r=30, g=120, b=255),  # blue  — team 1
 ]
 PUCK_COLOR = sv.Color(r=60, g=60, b=60)  # dark gray — stands out on ice
+REF_COLOR = sv.Color(r=10, g=10, b=10)   # black — referees, when --ref-classifier ran
+GOALIE_DARKEN = 0.55                      # darken team colour for goalies
+
+
+def _darken(color: sv.Color, factor: float = GOALIE_DARKEN) -> sv.Color:
+    """Return a darker variant of a supervision Color (used to mark
+    goalies with the same team hue as their teammates)."""
+    return sv.Color(
+        r=max(0, int(color.r * factor)),
+        g=max(0, int(color.g * factor)),
+        b=max(0, int(color.b * factor)),
+    )
+
+
+GOALIE_TEAM_COLORS = [_darken(c) for c in TEAM_COLORS]
 
 
 # --- Jersey color sampling & team clustering ---------------------------------
@@ -159,6 +174,7 @@ def build_detections(boxes):
 def render(detections_data, numbers, team_of, video_path, output,
            entity_of_tid=None, entity_by_id=None,
            per_track_goalie=None,
+           per_track_referee=None,
            debug_frames_dir=None, debug_frames_step=10):
     """Render. If entity_of_tid + entity_by_id are provided (P1.d
     output), each merged track inherits its entity's team_id,
@@ -186,7 +202,19 @@ def render(detections_data, numbers, team_of, video_path, output,
 
     numbers_tracks = numbers.get("tracks", {})
     per_track_goalie = per_track_goalie or {}
-    frames_map = {fr["frame"]: fr["boxes"] for fr in detections_data["frames"]}
+    per_track_referee = per_track_referee or {}
+
+    # Stage 1.a writes one record per processed source frame, with
+    # `frame` set to the SOURCE index. When detection ran at a lower
+    # fps than the source (stride > 1), the gap frames have no
+    # detection — replicate each record's boxes onto the next
+    # `stride - 1` source frames so the rendered video stays smooth
+    # instead of flashing every other frame.
+    stride = max(1, int(detections_data.get("stride", 1)))
+    frames_map = {}
+    for fr in detections_data["frames"]:
+        for offset in range(stride):
+            frames_map[fr["frame"] + offset] = fr["boxes"]
 
     def team_for(tid_i):
         """Resolve a track id to its team. Prefer the entity-level
@@ -219,18 +247,40 @@ def render(detections_data, numbers, team_of, video_path, output,
                 return bool(entity_by_id[eid].get("is_goaltender", False))
         return bool(per_track_goalie.get(tid_i, False))
 
-    # One annotator trio per team, each locked to its team color
-    annotators = []
-    for color in TEAM_COLORS:
-        annotators.append({
+    def referee_for(tid_i):
+        """Per-track is_referee from p1_b_teams.json (set only when
+        Stage 1.b ran with --ref-classifier). Refs render in black so
+        they read at a glance and don't pollute a team's colour."""
+        return bool(per_track_referee.get(tid_i, False))
+
+    # One annotator trio per visual category. Five categories total:
+    # team 0 skater (green) / team 0 goalie (dark green) / team 1
+    # skater (blue) / team 1 goalie (dark blue) / referee (black).
+    # supervision binds colour at construction time so each category
+    # needs its own annotator trio.
+    def _make_trio(color, trace_len=30):
+        return {
             "box": sv.BoxAnnotator(color=color, thickness=2),
             "label": sv.LabelAnnotator(color=color, text_scale=0.5,
                                        text_thickness=1),
             "trace": sv.TraceAnnotator(color=color, thickness=2,
-                                       trace_length=30),
-        })
-    # Puck annotator — neutral gray box, no label, short trace.
-    puck_box = sv.BoxAnnotator(color=PUCK_COLOR, thickness=2)
+                                       trace_length=trace_len),
+        }
+
+    annotators_by_key = {
+        # ("team", team_id, is_goalie)
+        ("team", 0, False): _make_trio(TEAM_COLORS[0]),
+        ("team", 0, True):  _make_trio(GOALIE_TEAM_COLORS[0]),
+        ("team", 1, False): _make_trio(TEAM_COLORS[1]),
+        ("team", 1, True):  _make_trio(GOALIE_TEAM_COLORS[1]),
+        ("ref",):           _make_trio(REF_COLOR),
+    }
+    # Puck — drawn as a CIRCLE (cv2.circle) instead of a bbox so it
+    # reads as a different object class than the player rectangles.
+    # Same dark-gray colour, plus a short trace by reusing the
+    # supervision TraceAnnotator (centroid-based, so the box-vs-circle
+    # difference doesn't matter for the trace).
+    puck_color_bgr = (PUCK_COLOR.b, PUCK_COLOR.g, PUCK_COLOR.r)
     puck_trace = sv.TraceAnnotator(color=PUCK_COLOR, thickness=2,
                                    trace_length=20)
 
@@ -245,33 +295,55 @@ def render(detections_data, numbers, team_of, video_path, output,
         puck_boxes = [b for b in boxes
                       if b["class_id"] == PUCK_CLASS and b["track_id"] >= 0]
 
-        by_team = [[], []]
+        # Bucket each box into one of the 5 visual categories.
+        # Referee tag (when present) takes precedence over team colour
+        # so refs always render black, regardless of which team the
+        # engine assigned them to.
+        by_key = defaultdict(list)
         for b in player_boxes:
-            by_team[team_for(b["track_id"])].append(b)
+            tid = b["track_id"]
+            if referee_for(tid):
+                by_key[("ref",)].append(b)
+            else:
+                by_key[("team", team_for(tid), goalie_for(tid))].append(b)
 
-        for team_id, team_boxes in enumerate(by_team):
-            if not team_boxes:
+        for key, boxes in by_key.items():
+            if not boxes:
                 continue
-            dets = build_detections(team_boxes)
+            dets = build_detections(boxes)
             labels = []
             for tid in dets.tracker_id:
                 ti = int(tid)
-                role = "G" if goalie_for(ti) else "S"
-                num = jersey_for(ti)
-                num_str = f"#{num}" if num else "#??"
-                # Label: `t{id} {G|S} #{num}` — track id always shown
-                # so the user can call out frame-level bugs by tid.
-                labels.append(f"t{ti} {role} {num_str}")
-            a = annotators[team_id]
+                if key[0] == "ref":
+                    # Referee label is unambiguous; jersey number is
+                    # meaningless on refs and would just clutter.
+                    labels.append(f"t{ti} REF")
+                else:
+                    role = "G" if goalie_for(ti) else "S"
+                    num = jersey_for(ti)
+                    num_str = f"#{num}" if num else "#??"
+                    # Label: `t{id} {G|S} #{num}` — track id always shown
+                    # so the user can call out frame-level bugs by tid.
+                    labels.append(f"t{ti} {role} {num_str}")
+            a = annotators_by_key[key]
             frame = a["box"].annotate(scene=frame, detections=dets)
             frame = a["label"].annotate(scene=frame, detections=dets,
                                         labels=labels)
             frame = a["trace"].annotate(scene=frame, detections=dets)
 
-        # Puck — gray box + short trace, no label
+        # Puck — drawn as a circle (so it reads as a different object
+        # class than the player rectangles). The radius is half the
+        # bbox width so the circle hugs the puck the same way the bbox
+        # did. Trace stays the same (centroid-based polyline).
         if puck_boxes:
+            for b in puck_boxes:
+                x1, y1, x2, y2 = b["xyxy"]
+                cx = int(round((x1 + x2) / 2))
+                cy = int(round((y1 + y2) / 2))
+                radius = max(3, int(round(max(x2 - x1, y2 - y1) / 2)))
+                cv2.circle(frame, (cx, cy), radius, puck_color_bgr,
+                           thickness=2, lineType=cv2.LINE_AA)
             puck_dets = build_detections(puck_boxes)
-            frame = puck_box.annotate(scene=frame, detections=puck_dets)
             frame = puck_trace.annotate(scene=frame, detections=puck_dets)
 
         writer.write(frame)
@@ -317,6 +389,7 @@ def main():
     numbers = json.loads(numbers_json.read_text())
 
     per_track_goalie = {}
+    per_track_referee = {}
     teams_json_path = detections_json.with_name("p1_b_teams.json")
     if teams_json_path.exists():
         print(f"Using precomputed teams from {teams_json_path}")
@@ -326,6 +399,13 @@ def main():
         team_colors = [tuple(c) for c in teams_data["team_centers_bgr"]]
         per_track_goalie = {int(tid): bool(info.get("is_goaltender", False))
                             for tid, info in teams_data["tracks"].items()}
+        # Only populated when Stage 1.b ran with --ref-classifier;
+        # otherwise every track silently falls back to is_referee=False.
+        per_track_referee = {int(tid): bool(info.get("is_referee", False))
+                             for tid, info in teams_data["tracks"].items()}
+        n_refs = sum(1 for v in per_track_referee.values() if v)
+        if n_refs:
+            print(f"  {n_refs} tracks tagged as referee (will render black)")
     else:
         print("Sampling jersey colors per track…")
         colors = sample_track_colors(detections_data, video, args.color_samples)
@@ -361,6 +441,7 @@ def main():
     render(detections_data, numbers, team_of, video, output,
            entity_of_tid=entity_of_tid, entity_by_id=entity_by_id,
            per_track_goalie=per_track_goalie,
+           per_track_referee=per_track_referee,
            debug_frames_dir=debug_frames_dir,
            debug_frames_step=args.debug_frames_step)
 

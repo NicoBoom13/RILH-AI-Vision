@@ -91,6 +91,7 @@ def run(
     hockey_mode: bool,
     tracker: str,
     training_mode: bool = False,
+    detect_fps: float = 30.0,
 ):
     """Run YOLO detection + ByteTrack tracking on a video.
 
@@ -109,6 +110,13 @@ def run(
         training_mode: If True, keep all puck detections per frame
             (multi-puck drills). If False (default = match mode), keep
             only the highest-confidence puck per frame.
+        detect_fps: Target detection frame-rate. Frames are sub-sampled
+            so detection runs at roughly this rate (stride =
+            round(source_fps / detect_fps), clamped to ≥1). Frame
+            indices stored in the JSON refer to the SOURCE video.
+            Downstream stages (1.b, 1.c, 3.a, 3.b) read the stride
+            from the JSON header and carry detections forward across
+            skipped frames as needed.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     annotated_path = output_dir / "annotated_raw.mp4"
@@ -123,10 +131,16 @@ def run(
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     cap.release()
 
+    stride = max(1, round(fps / max(detect_fps, 1e-3)))
+    effective_fps = fps / stride
+
     print(f"Video: {width}x{height} @ {fps:.2f}fps, {total_frames} frames")
     print(f"Backend: {'HockeyAI' if hockey_mode else 'YOLO11 COCO'}")
     print(f"Model: {model_name}, conf={conf}, imgsz={imgsz}")
     print(f"Tracker: {tracker}")
+    print(f"Detect-fps: target {detect_fps:.1f}fps → stride {stride} "
+          f"(effective {effective_fps:.2f}fps, "
+          f"~{total_frames // stride} processed frames)")
     if training_mode:
         print("Training mode: keeping ALL puck detections per frame "
               "(multi-puck drills)")
@@ -146,7 +160,11 @@ def run(
     trace_annotator = sv.TraceAnnotator(thickness=2, trace_length=30)
 
     fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-    writer = cv2.VideoWriter(str(annotated_path), fourcc, fps, (width, height))
+    # annotated_raw.mp4 plays back at real-time even when stride > 1:
+    # we wrote one frame per processed source frame, so the output
+    # frame-rate is source_fps / stride.
+    writer = cv2.VideoWriter(str(annotated_path), fourcc, effective_fps,
+                             (width, height))
 
     all_frames = []
 
@@ -159,11 +177,15 @@ def run(
         classes=native_classes,
         stream=True,
         verbose=False,
+        vid_stride=stride,
     )
 
-    frame_idx = 0
+    processed_idx = 0
     for r in results:
         frame = r.orig_img.copy()
+        # Frame indices stored in JSON refer to the SOURCE video so
+        # downstream stages can seek into it directly.
+        frame_idx = processed_idx * stride
         frame_record = {"frame": frame_idx, "boxes": []}
 
         if r.boxes is not None and len(r.boxes) > 0:
@@ -238,20 +260,29 @@ def run(
         all_frames.append(frame_record)
         writer.write(frame)
 
-        frame_idx += 1
-        if frame_idx % 60 == 0:
-            pct = 100 * frame_idx / max(total_frames, 1)
-            print(f"  {frame_idx}/{total_frames} frames ({pct:.1f}%)")
+        processed_idx += 1
+        if processed_idx % 60 == 0:
+            pct = 100 * processed_idx / max(total_frames // stride, 1)
+            print(f"  {processed_idx}/{total_frames // stride} processed "
+                  f"(source frame {frame_idx}/{total_frames}, {pct:.1f}%)")
 
     writer.release()
 
     with open(detections_path, "w") as f:
         json.dump({
             "video": str(video_path),
+            # Backwards-compat: `fps` keeps the source video frame-rate so
+            # any older reader still gets the right value for seeking.
             "fps": fps,
+            "source_fps": fps,
+            "detect_fps": detect_fps,
+            "stride": stride,
             "width": width,
             "height": height,
-            "total_frames": frame_idx,
+            # Number of frame records in this JSON. With stride>1 this is
+            # smaller than the source video's frame count.
+            "total_frames": processed_idx,
+            "total_source_frames": total_frames,
             "model": model_name,
             "backend": "hockeyai" if hockey_mode else "coco",
             "tracker": tracker,
@@ -290,6 +321,15 @@ def main():
                              "dropping false positives. Pass --training-mode "
                              "to keep every puck detection — useful for "
                              "drills where multiple pucks are in play at once.")
+    parser.add_argument("--detect-fps", type=float, default=30.0,
+                        help="Target detection frame-rate (default 30). The "
+                             "source video is sub-sampled so detection runs "
+                             "at roughly this rate; stride = "
+                             "round(source_fps / detect_fps), clamped to ≥1. "
+                             "Frame indices in p1_a_detections.json refer to "
+                             "the SOURCE video so downstream stages keep "
+                             "working unchanged. Pass the source's native fps "
+                             "(e.g. 60) to disable sub-sampling.")
     args = parser.parse_args()
 
     if args.hockey_model:
@@ -301,6 +341,7 @@ def main():
         Path(args.video), Path(args.output), model_name,
         args.conf, args.imgsz, hockey_mode=args.hockey_model,
         tracker=args.tracker, training_mode=args.training_mode,
+        detect_fps=args.detect_fps,
     )
 
 

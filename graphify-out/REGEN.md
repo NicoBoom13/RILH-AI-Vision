@@ -1,20 +1,28 @@
-# Regenerating graph3d.html
+# Regenerating graph3d.html + graphParams3D.html
 
-This directory contains a 3D pipeline visualization (`graph3d.html`) and the data + script needed to rebuild it.
+This directory contains two 3D pipeline visualizations and the scripts to rebuild them.
 
 ## Files
 
-- `graph3d.html` — the visualization (open in any browser, no server)
+- `graph3d.html` — code-level pipeline view (AST + orchestration). Top-right "CLI Params →" button switches to the params view.
+- `graphParams3D.html` — companion view: each stage with its CLI flags + defaults, colour-coded by category (I/O, model, threshold, …). Top-right "← Pipeline Graph" button switches back.
 - `graph.json` — merged knowledge graph (graphify AST + orchestration layer)
 - `orchestration.json` — pipeline orchestration nodes/edges (phases, data flow, design rationale, blockers). Hand-curated from README.md / CLAUDE.md / docs/phase_1_6_design.md / configs.
-- `regen.py` — single-command rebuild script
+- `regen.py` — rebuild script for `graph3d.html` (AST + orchestration)
+- `regen_params.py` — rebuild script for `graphParams3D.html` (curated stage CLIs)
 - `cache/` — graphify's content-hashed AST cache (incremental rebuilds)
 
 ## How to rebuild
 
 ```bash
+# Code-level graph (graph3d.html)
 /Users/nico/.local/share/uv/tools/graphifyy/bin/python graphify-out/regen.py
+
+# CLI-params graph (graphParams3D.html) — independent, no graphify dependency
+/Users/nico/.local/share/uv/tools/graphifyy/bin/python graphify-out/regen_params.py
 ```
+
+Re-run `regen_params.py` whenever a stage's CLI changes (new flag, default tweak, new engine choice). The parameter list is curated by hand inside the script — keep it in sync with `src/p*_*.py` and `src/run_project.py`.
 
 What it does (~2 seconds, no LLM tokens):
 

@@ -492,6 +492,9 @@ html, body { margin:0; padding:0; overflow:hidden; background:#000; font-family:
 #info .meta { opacity:0.7; font-size:11px; }
 #controls { position:absolute; bottom:16px; right:16px; padding:8px 12px; font-size:11px; opacity:0.75; }
 #controls span { color:#6affff; }
+#navbtn { position:absolute; top:16px; right:16px; padding:8px 14px; font-size:11px; text-decoration:none; color:#cfeaff; opacity:0.85; transition:opacity 0.12s, border-color 0.12s, color 0.12s; z-index:11; }
+#navbtn:hover { opacity:1; color:#6affff; border-color:rgba(0,245,255,0.55); }
+#navbtn .arrow { color:#6affff; margin-left:6px; font-weight:600; }
 .scanline::after { content:""; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg, rgba(0,220,255,0.02) 0px, rgba(0,220,255,0.02) 1px, transparent 1px, transparent 3px); z-index:5; }
 .vignette { position:absolute; inset:0; pointer-events:none; z-index:6; background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%); }
 </style>
@@ -499,6 +502,7 @@ html, body { margin:0; padding:0; overflow:hidden; background:#000; font-family:
 <body class="scanline">
 <div id="graph"></div>
 <div class="vignette"></div>
+<a id="navbtn" class="panel" href="graphParams3D.html" title="See each stage's CLI parameters + defaults">CLI Params<span class="arrow">→</span></a>
 <div id="leftcol">
   <div id="overlay" class="panel">
     <h1>▲ RILH-AI-Vision · Pipeline</h1>

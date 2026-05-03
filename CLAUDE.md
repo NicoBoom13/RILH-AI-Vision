@@ -96,8 +96,16 @@ analytics. Built from open-source modules + custom code only.
   class flips. Design doc: `docs/p3_a_entities_design.md`.
 - **Stage 3.b (Annotate)** ✅ (was Stage 1.e). Final MP4 with team-
   coloured boxes, per-track label `t{id} {G|S} #NN` (track id always
-  shown), dark-gray puck box, short traces. Auto-discovers
-  `p1_b_teams.json` and `p3_a_entities.json` next to
+  shown), short traces. Goalkeepers render with their team colour
+  × 0.55 (darker green / darker blue) so the role reads at a glance
+  without breaking the team side. Referees (when Stage 1.b ran with
+  `--ref-classifier`) render in **black** with `t{id} REF` label.
+  Puck is drawn as a **circle** (cv2.circle, dark gray) instead of a
+  bbox so it reads as a different object class than the players. When
+  Stage 1.a ran with sub-sampled detection (`--detect-fps < source_fps`),
+  the JSON's `stride` field tells `p3_b_annotate` to carry detections
+  forward across skipped frames so the rendered video stays smooth.
+  Auto-discovers `p1_b_teams.json` and `p3_a_entities.json` next to
   `p1_a_detections.json` if present. Optional `--debug-frames-dir`
   writes 1 PNG every N frames.
 - **Phase 2 follow-cam (former)** — REMOVED from the project for now.
@@ -354,6 +362,7 @@ Annotation (`p3_b_annotate.py`):
 src/
 ├── run_project.py         — orchestrator (Phase 1 → Phase 5 with per-phase gates)
 ├── p1_a_detect.py         — Phase 1 stage a — detect & track
+├── pose_cache.py          — pre-extract YOLO-pose cache shared by 1.b + 1.c
 ├── p1_b_teams.py          — Phase 1 stage b — teams
 ├── p1_c_numbers.py        — Phase 1 stage c — numbers (PARSeq OCR)
 ├── p2_a_rink.py           — Phase 2 stage a — rink calibration (high prio)
@@ -375,9 +384,12 @@ data/                      — license-clean datasets (committed). Today:
 tools/                     — utilities (annotation web UI, dataset/splits
                               builders, fine-tune script, smoke tests).
                               Not pipeline stages.
-graphify-out/              — local 3D visualization (mostly gitignored;
-                              regen.py + orchestration.json + style.css +
-                              REGEN.md tracked as source).
+graphify-out/              — two local 3D visualizations (mostly gitignored;
+                              regen.py + regen_params.py + orchestration.json
+                              + style.css + REGEN.md tracked as source).
+                              graph3d.html = code-level pipeline.
+                              graphParams3D.html = per-stage CLI params + defaults
+                              (3D spiral around Input/Output sub-nodes per stage).
 ```
 
 ## Tools (`tools/`)
@@ -421,15 +433,31 @@ graphify-out/              — local 3D visualization (mostly gitignored;
   similar-coloured teams). Writes `models/contrastive_team_rilh.pt`.
 
 ## Visualization (`graphify-out/` — local-only)
-3D interactive knowledge graph of the pipeline (~225 nodes, ~325
-edges, ~13 communities). **Two-level architecture pinned on an X-axis
-rail**: 7 project phases (Phase 1-5 cyan = orchestrated, Phase 6-7
-amber = external) with vertical sub-pipelines of internal stages
-(Stage 1.a … Stage 5.a, smaller + dimmer than their parent phase).
-Script files (`pN_x_*.py`) are pinned next to their stage in soft
-mint. Anything not reachable from any phase via BFS is dropped into
-an "Orphans" cluster past Phase 7 with a visible gap (red rings) so
-dead/unwired files read at a glance.
+
+Two companion 3D interactive views, cross-linked via discrete top-right
+buttons:
+
+- **`graph3d.html`** — code-level pipeline (~225 nodes, ~325 edges, ~13
+  communities). **Two-level architecture pinned on an X-axis rail**:
+  7 project phases (Phase 1-5 cyan = orchestrated, Phase 6-7 amber =
+  external) with vertical sub-pipelines of internal stages
+  (Stage 1.a … Stage 5.a, smaller + dimmer than their parent phase).
+  Script files (`pN_x_*.py`) are pinned next to their stage in soft
+  mint. Anything not reachable from any phase via BFS is dropped into
+  an "Orphans" cluster past Phase 7 with a visible gap (red rings) so
+  dead/unwired files read at a glance. Built by `regen.py`.
+- **`graphParams3D.html`** — same idiom (phase rail + dust + bloom)
+  but each stage hosts its own galaxy of CLI flags grouped under
+  Input + Output sub-nodes. The I/O axis rotates 45° and flips per
+  stage so two stages of the same phase never share an orientation.
+  Params placed on a deterministic 3-D spiral around their I/O sub-
+  node (70° azimuth step, +15 % radial growth per rank, triangle-wave
+  elevation). Each param shows its flag (above) and default (below
+  in muted grey). Pipeline Filter sidebar (Phase → Stage → Input /
+  Output → param), category legend, search box and per-row solo
+  button. Built by `regen_params.py`; the parameter list is curated
+  by hand inside that script — keep it in sync with `src/p*_*.py` and
+  `src/run_project.py` whenever a CLI changes.
 
 Built by `graphify` (PyPI `graphifyy`) for AST extraction from
 `src/*.py` + a custom 3D renderer (`3d-force-graph` / ThreeJS) that
@@ -446,6 +474,51 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 ## Test run log
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
+
+- **2026-05-04 perf + visuals + graphParams3D** — three concurrent improvements:
+  1. **Pipeline perf −40 %** (run30 → run31 on equivalent 60s @ 60fps clip).
+     New `--detect-fps` flag (default 30) on Stage 1.a + orchestrator pass-
+     through: `vid_stride = round(source_fps / detect_fps)` skips frames at
+     the YOLO source-reader level, source-aligned indices stored in JSON,
+     `p3_b_annotate` carries detections forward across skipped frames so
+     the annotated MP4 stays smooth. Pose pre-extract step
+     (`src/pose_cache.py`, library + CLI) runs YOLO-pose ONCE on the union
+     of frames 1.b + 1.c need; both stages then read the cache (cache miss
+     falls back to inline pose so each script stays standalone-runnable).
+     Stage 1.b + 1.c run in parallel after the cache is built (`Popen`
+     + per-stage logs in the run folder). Net wall-clock on Video 08
+     equivalent: 2175s (run30 baseline) → 1335s (run31 stride 2 + cache +
+     parallel) = **−39 %**. Stride 1 on quality config (run32, 2065s)
+     gets the parallel + cache savings without touching detection density.
+  2. **Stage 3.b annotate visuals** — puck rendered as a circle (cv2.circle,
+     LINE_AA, same dark-gray colour) instead of a bbox, so it reads as
+     a different object class than the player rectangles. Referee tracks
+     (when Stage 1.b ran with `--ref-classifier`) render in **black** with
+     label `t{id} REF` instead of inheriting their team colour.
+     Goalkeepers render with their team colour × 0.55 (darker green or
+     darker blue) so the role reads at a glance without losing the team
+     side.
+  3. **Orchestrator pass-through expanded** — `--team-engine`,
+     `--contrastive-checkpoint`, `--ref-classifier` and `--detect-fps`
+     now exposed at the `run_project.py` level (previously only at
+     Stage 1.b's CLI). Recommended quality config for any new analytical
+     run: `--hockey-model --pose-model yolo26l-pose.pt
+     --parseq-checkpoint models/parseq_hockey_rilh.pt --team-engine
+     contrastive --ref-classifier models/ref_classifier_rilh.pt`.
+  4. **`graphify-out/graphParams3D.html`** — companion visualization
+     to `graph3d.html`. Same visual idiom (phase rail + dust + bloom)
+     but each stage hosts its own galaxy of CLI flags grouped under
+     small Input + Output sub-nodes (rotated 45° per stage so adjacent
+     stages don't share orientation). Params placed on a deterministic
+     3-D spiral around their I/O sub-node: 70° azimuth step, +15 % radial
+     growth per rank, triangle-wave elevation in [0°, 60°] so the cloud
+     never collapses to a plane. Top-right discrete buttons cross-link
+     the two views. Pipeline Filter sidebar (Phase → Stage → Input /
+     Output → param), category legend, search box, and per-row solo
+     button — same UX as `graph3d.html`, all sections collapsed by
+     default. Built by `graphify-out/regen_params.py`; see
+     `graphify-out/REGEN.md`. Run30/31/32 artefacts kept under their
+     respective folders for visual diff.
 
 - **2026-04-27 6-clip team-engine bench** — full pass with ref classifier
   v2 + contrastive v3 (both retrained on the expanded 2100-track truth

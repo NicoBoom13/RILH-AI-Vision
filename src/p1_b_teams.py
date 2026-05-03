@@ -239,13 +239,19 @@ def stream_needed_frames(video_path, indices):
 
 def sample_jersey_colors(tracks_data, video_path, pose_model, device,
                          samples_per_track, pose_imgsz, multi_grid,
-                         keep_torso_crops=False):
+                         keep_torso_crops=False, pose_cache=None):
     """Extract per-crop torso color samples for each track via pose +
     multi-point averaging. When ``keep_torso_crops=True`` the raw BGR
     torso ndarray for every kept sample is also returned alongside the
     colour stat — needed by the embedding-based team engines (osnet,
     siglip, contrastive) that consume pixels directly. The HSV engine
     only needs ``crop_colors`` and ignores ``torso_crops``.
+
+    When ``pose_cache`` is given (``{frame_idx: pose_record | None}``,
+    produced by ``src.pose_cache``), pose results for cached frames are
+    looked up instead of re-computed. Cache misses fall back to an
+    inline ``pose_model.predict`` call so the stage stays independently
+    runnable.
 
     Returns ``{tid: {"crop_colors": [(b,g,r), ...],
                      "torso_crops": [ndarray | None, ...],
@@ -257,7 +263,10 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
         for fi, xyxy, _ in sorted(dets, key=lambda d: -d[2])[:samples_per_track]:
             frame_work[fi].append((tid, xyxy))
     needed = sorted(frame_work.keys())
-    print(f"Unique frames to read: {len(needed)}")
+    n_in_cache = (sum(1 for fi in needed if fi in pose_cache)
+                  if pose_cache is not None else 0)
+    print(f"Unique frames to read: {len(needed)} "
+          f"({n_in_cache} via pose cache)")
 
     crops_by_tid = defaultdict(list)
     torso_by_tid = defaultdict(list)
@@ -271,19 +280,27 @@ def sample_jersey_colors(tracks_data, video_path, pose_model, device,
 
     for fi, frame in stream_needed_frames(video_path, needed):
         work = frame_work[fi]
-        pose_res = pose_model.predict(
-            source=frame, imgsz=pose_imgsz, conf=0.10,
-            classes=[PERSON_CLASS], verbose=False, device=device,
-        )[0]
 
+        # Pose lookup: cache first, otherwise run inline so the stage
+        # still works without the pose pre-extract step.
         pose_boxes = None
         pose_kp_xy = None
         pose_kp_conf = None
-        if (pose_res.keypoints is not None and pose_res.boxes is not None
-                and len(pose_res.boxes) > 0):
-            pose_boxes = pose_res.boxes.xyxy.cpu().numpy()
-            pose_kp_xy = pose_res.keypoints.xy.cpu().numpy()
-            pose_kp_conf = pose_res.keypoints.conf.cpu().numpy()
+        cached = pose_cache.get(fi) if pose_cache is not None else None
+        if cached is not None:
+            pose_boxes = cached["boxes"]
+            pose_kp_xy = cached["kp_xy"]
+            pose_kp_conf = cached["kp_conf"]
+        elif pose_cache is None or fi not in pose_cache:
+            pose_res = pose_model.predict(
+                source=frame, imgsz=pose_imgsz, conf=0.10,
+                classes=[PERSON_CLASS], verbose=False, device=device,
+            )[0]
+            if (pose_res.keypoints is not None and pose_res.boxes is not None
+                    and len(pose_res.boxes) > 0):
+                pose_boxes = pose_res.boxes.xyxy.cpu().numpy()
+                pose_kp_xy = pose_res.keypoints.xy.cpu().numpy()
+                pose_kp_conf = pose_res.keypoints.conf.cpu().numpy()
 
         for tid, xyxy in work:
             n_processed += 1
@@ -987,7 +1004,7 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
 
 def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         pose_imgsz, preview_cols, space, multi_grid, engine,
-        ref_classifier_path=None):
+        ref_classifier_path=None, pose_cache_path=None):
     """Run the team-classification pipeline end-to-end.
 
     Loads ``p1_a_detections.json``, samples crops from the source video,
@@ -996,6 +1013,11 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
     The engine sees both the dominant-colour stat (used by HSV) and the
     raw torso BGR crops (used by embedding engines), set by
     ``engine.needs_torso_crops``.
+
+    When ``pose_cache_path`` points at a pickle produced by
+    ``src.pose_cache``, pose results for cached frames are looked up
+    instead of re-computed (saves the duplicated pose pass that 1.b
+    and 1.c would otherwise both pay for).
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -1012,9 +1034,18 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
     print(f"Total player tracks in {detections_json.name}: {len(all_tids)} "
           f"(skaters {len(skater_tids)}, goaltenders {len(goalie_tids)})")
 
-    pose_path = str(resolve_yolo_path(pose_model_name))
-    print(f"Loading pose model: {pose_path}")
-    pose_model = YOLO(pose_path)
+    pose_cache = None
+    pose_model = None
+    if pose_cache_path is not None and Path(pose_cache_path).exists():
+        from pose_cache import load_cache as _load_cache
+        meta, pose_cache = _load_cache(pose_cache_path)
+        if pose_cache is not None:
+            print(f"Pose cache: {pose_cache_path} "
+                  f"({len(pose_cache)} frames, model={meta.get('pose_model')})")
+    if pose_cache is None:
+        pose_path = str(resolve_yolo_path(pose_model_name))
+        print(f"Loading pose model: {pose_path}")
+        pose_model = YOLO(pose_path)
 
     print(f"Sampling jersey colors (≤{samples_per_track}/track, pose-based, "
           f"{multi_grid[0]}×{multi_grid[1]} multi-point)…")
@@ -1022,6 +1053,7 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         detections_data, video_path, pose_model, device,
         samples_per_track, pose_imgsz, multi_grid,
         keep_torso_crops=engine.needs_torso_crops,
+        pose_cache=pose_cache,
     )
     n_crops = sum(len(v["crop_colors"]) for v in crops_by_tid.values())
     print(f"  colors extracted for {len(crops_by_tid)}/{len(all_tids)} tracks "
@@ -1048,6 +1080,7 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
                 detections_data, video_path, pose_model, device,
                 samples_per_track, pose_imgsz, multi_grid,
                 keep_torso_crops=True,
+                pose_cache=pose_cache,
             )
         else:
             crops_by_tid_with_torso = crops_by_tid
@@ -1166,6 +1199,12 @@ def main():
                         "set, every track is tagged with is_referee + "
                         "ref_score in p1_b_teams.json. Orthogonal to "
                         "--team-engine — runs after the team clustering.")
+    p.add_argument("--pose-cache", type=str, default=None,
+                   help="Optional pickle produced by src/pose_cache.py "
+                       "(default: <detections_dir>/p1_pose_cache.pkl when "
+                       "it exists). When provided, pose results for cached "
+                       "frames are looked up instead of re-computed; cache "
+                       "misses fall back to inline pose inference.")
     args = p.parse_args()
 
     try:
@@ -1178,12 +1217,20 @@ def main():
     output = (Path(args.output) if args.output
               else detections_json.with_name("p1_b_teams.json"))
 
+    # Default cache path: alongside the detections JSON. Loaded only if
+    # the file actually exists — falls back to inline pose otherwise.
+    pose_cache = (Path(args.pose_cache) if args.pose_cache
+                  else detections_json.with_name("p1_pose_cache.pkl"))
+    if not pose_cache.exists():
+        pose_cache = None
+
     engine = TEAM_ENGINES[args.team_engine](args)
 
     run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,
         args.preview_cols, args.space, (rows, cols), engine,
-        ref_classifier_path=Path(args.ref_classifier) if args.ref_classifier else None)
+        ref_classifier_path=Path(args.ref_classifier) if args.ref_classifier else None,
+        pose_cache_path=pose_cache)
 
 
 if __name__ == "__main__":

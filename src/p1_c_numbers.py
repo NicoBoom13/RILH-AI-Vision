@@ -406,6 +406,7 @@ def run(
     debug_crops_dir: Path | None = None,
     parseq_checkpoint: Path | None = None,
     frame_stride: int | None = None,
+    pose_cache_path: Path | None = None,
 ):
     """Run the full per-track jersey-number identification pipeline.
 
@@ -414,6 +415,12 @@ def run(
     samples, crop the dorsal jersey region Koshkina-style, OCR with
     PARSeq, vote per track (≥ 2 agreeing votes required), and write
     ``p1_c_numbers.json`` plus an optional debug-crop dump.
+
+    When ``pose_cache_path`` points at a pickle produced by
+    ``src.pose_cache``, pose results for cached frames are looked up
+    instead of re-computed. Cache misses fall back to an inline
+    ``pose_model.predict`` call so the stage stays independently
+    runnable.
     """
     device = pick_device()
     print(f"Device: {device}")
@@ -432,11 +439,24 @@ def run(
         for d in dets:
             frame_work[d["frame"]].append((tid, d["xyxy"]))
     needed = sorted(frame_work.keys())
-    print(f"Unique frames to read: {len(needed)}")
 
-    pose_path = str(resolve_yolo_path(pose_model_name))
-    print(f"Loading pose model: {pose_path}")
-    pose_model = YOLO(pose_path)
+    pose_cache = None
+    pose_model = None
+    if pose_cache_path is not None and Path(pose_cache_path).exists():
+        from pose_cache import load_cache as _load_cache
+        meta, pose_cache = _load_cache(pose_cache_path)
+        if pose_cache is not None:
+            n_in_cache = sum(1 for fi in needed if fi in pose_cache)
+            print(f"Pose cache: {pose_cache_path} "
+                  f"({n_in_cache}/{len(needed)} needed frames cached, "
+                  f"model={meta.get('pose_model')})")
+    if pose_cache is None:
+        print(f"Unique frames to read: {len(needed)}")
+        pose_path = str(resolve_yolo_path(pose_model_name))
+        print(f"Loading pose model: {pose_path}")
+        pose_model = YOLO(pose_path)
+    else:
+        pose_path = str(meta.get("pose_model", pose_model_name))
 
     ocr = ParseqOCR(device=device, checkpoint_path=parseq_checkpoint)
 
@@ -482,19 +502,27 @@ def run(
 
     for fi, frame in stream_needed_frames(video_path, needed):
         work = frame_work[fi]
-        pose_res = pose_model.predict(
-            source=frame, imgsz=pose_imgsz, conf=0.25,
-            classes=[PERSON_CLASS], verbose=False, device=device,
-        )[0]
 
+        # Pose lookup: cache first, otherwise run inline so the stage
+        # still works without the pose pre-extract step.
         pose_boxes = None
         pose_kp_xy = None
         pose_kp_conf = None
-        if (pose_res.keypoints is not None and pose_res.boxes is not None
-                and len(pose_res.boxes) > 0):
-            pose_boxes = pose_res.boxes.xyxy.cpu().numpy()
-            pose_kp_xy = pose_res.keypoints.xy.cpu().numpy()
-            pose_kp_conf = pose_res.keypoints.conf.cpu().numpy()
+        cached = pose_cache.get(fi) if pose_cache is not None else None
+        if cached is not None:
+            pose_boxes = cached["boxes"]
+            pose_kp_xy = cached["kp_xy"]
+            pose_kp_conf = cached["kp_conf"]
+        elif pose_cache is None or fi not in pose_cache:
+            pose_res = pose_model.predict(
+                source=frame, imgsz=pose_imgsz, conf=0.25,
+                classes=[PERSON_CLASS], verbose=False, device=device,
+            )[0]
+            if (pose_res.keypoints is not None and pose_res.boxes is not None
+                    and len(pose_res.boxes) > 0):
+                pose_boxes = pose_res.boxes.xyxy.cpu().numpy()
+                pose_kp_xy = pose_res.keypoints.xy.cpu().numpy()
+                pose_kp_conf = pose_res.keypoints.conf.cpu().numpy()
 
         for tid, xyxy in work:
             idx = len(sample_results[tid])
@@ -637,6 +665,12 @@ def main():
                         "Default = baudm/parseq pretrained on STR. Use "
                         "models/parseq_hockey_rilh.pt for our RILH-fine-tuned "
                         "Koshkina hockey model (non-commercial license).")
+    p.add_argument("--pose-cache", type=str, default=None,
+                   help="Optional pickle produced by src/pose_cache.py "
+                       "(default: <detections_dir>/p1_pose_cache.pkl when "
+                       "it exists). When provided, pose results for cached "
+                       "frames are looked up instead of re-computed; cache "
+                       "misses fall back to inline pose inference.")
     args = p.parse_args()
 
     detections_json = Path(args.detections_json)
@@ -647,6 +681,13 @@ def main():
     parseq_ckpt = (Path(args.parseq_checkpoint)
                    if args.parseq_checkpoint else None)
 
+    # Default cache path: alongside the detections JSON. Loaded only if
+    # the file actually exists — falls back to inline pose otherwise.
+    pose_cache = (Path(args.pose_cache) if args.pose_cache
+                  else detections_json.with_name("p1_pose_cache.pkl"))
+    if not pose_cache.exists():
+        pose_cache = None
+
     run(
         detections_json, video, output,
         args.pose_model, args.samples_per_track, args.ocr_min_conf,
@@ -654,6 +695,7 @@ def main():
         debug_crops_dir=debug_dir,
         parseq_checkpoint=parseq_ckpt,
         frame_stride=args.frame_stride,
+        pose_cache_path=pose_cache,
     )
 
 

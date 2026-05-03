@@ -93,6 +93,58 @@ def step(label, cmd, expected_outputs, force):
     return True
 
 
+def steps_parallel(items, force, log_dir):
+    """Run several stage subprocesses concurrently, each redirecting its
+    own stdout+stderr to a log file under ``log_dir``. Returns a list of
+    bools (one per item) reporting per-stage success.
+
+    ``items`` is a list of ``(label, cmd, expected_outputs, log_basename)``
+    tuples. Stages whose expected outputs already exist are skipped (and
+    counted as success), unless ``force=True``.
+
+    Each running stage writes to ``log_dir/<log_basename>.log``; tail
+    those files to follow live progress (the orchestrator only reports
+    start/end here, since interleaved stdout from concurrent stages
+    would be unreadable)."""
+    log_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\n----- {' + '.join(it[0] for it in items)} (parallel) -----")
+    procs = []   # parallel to items: (popen|None, log_file|None, t0|None)
+    skipped = []
+    for label, cmd, expected_outputs, log_basename in items:
+        if not force and all(o.exists() for o in expected_outputs):
+            print(f"  ✓ {label}: outputs already exist, skipping")
+            for o in expected_outputs:
+                print(f"      {o}")
+            procs.append((None, None, None))
+            skipped.append(True)
+            continue
+        skipped.append(False)
+        log_path = log_dir / f"{log_basename}.log"
+        log_f = open(log_path, "w")
+        print(f"  ▶ {label}")
+        print(f"      $ {' '.join(str(c) for c in cmd)}")
+        print(f"      log → {log_path}")
+        proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT)
+        procs.append((proc, log_f, time.time()))
+
+    results = []
+    for (label, _cmd, _exp, _basename), (proc, log_f, t0), was_skipped in zip(
+            items, procs, skipped):
+        if was_skipped:
+            results.append(True)
+            continue
+        rc = proc.wait()
+        log_f.close()
+        dt = time.time() - t0
+        if rc != 0:
+            print(f"  ✗ {label} FAILED after {dt:.0f}s (exit {rc})")
+            results.append(False)
+        else:
+            print(f"  ✓ {label} done in {dt:.0f}s")
+            results.append(True)
+    return results
+
+
 def run_p1_detect_track(video, out, args):
     """Run Phase 1 (a detect → b teams → c numbers) sequentially.
 
@@ -112,27 +164,60 @@ def run_p1_detect_track(video, out, args):
     if args.model:
         cmd.extend(["--model", args.model])
     cmd.extend(["--conf", str(args.conf), "--imgsz", str(args.imgsz),
-                "--tracker", args.tracker])
+                "--tracker", args.tracker,
+                "--detect-fps", str(args.detect_fps)])
     if not step("Stage 1.a — Detect & track", cmd,
                 [out / "p1_a_detections.json"], args.force):
         raise SystemExit("Stage 1.a failed — halting Phase 1")
 
-    # Stage 1.b — teams
-    cmd = [PYTHON, "-u", str(SRC / "p1_b_teams.py"),
+    # Pose pre-extract — runs YOLO pose ONCE on the union of frames
+    # that 1.b and 1.c need (top-15 highest-conf detections per track,
+    # which subsumes 1.b's top-8). Both stages then look up the cache
+    # instead of re-running pose, which (a) saves a full pose pass
+    # vs the old sequential 1.b → 1.c, and (b) unblocks running 1.b
+    # and 1.c in parallel without GPU contention on the pose model.
+    cmd = [PYTHON, "-u", str(SRC / "pose_cache.py"),
            str(out / "p1_a_detections.json"), str(video),
-           "--pose-model", args.pose_model]
-    if not step("Stage 1.b — Teams", cmd,
-                [out / "p1_b_teams.json"], args.force):
-        raise SystemExit("Stage 1.b failed — halting Phase 1")
+           "--pose-model", args.pose_model,
+           "--samples-per-track", "15"]
+    if not step("Stage 1.b/1.c — Pose pre-extract", cmd,
+                [out / "p1_pose_cache.pkl"], args.force):
+        # Soft-fail: 1.b and 1.c can still run inline-pose if the
+        # cache isn't there. We just lose the wall-clock saving.
+        print("  ⚠ Pose pre-extract failed — 1.b/1.c will fall back "
+              "to inline pose. Continuing.")
 
-    # Stage 1.c — numbers (jersey OCR)
-    cmd = [PYTHON, "-u", str(SRC / "p1_c_numbers.py"),
-           str(out / "p1_a_detections.json"), str(video),
-           "--pose-model", args.pose_model]
+    # Stage 1.b + Stage 1.c run in parallel — they share the pose
+    # cache produced above, so neither needs to run pose, and they
+    # don't write to any shared file. The PARSeq OCR (1.c) and the
+    # team engine (1.b) each get their own GPU stream; on MPS this
+    # roughly halves the combined wall-clock vs sequential.
+    cmd_b = [PYTHON, "-u", str(SRC / "p1_b_teams.py"),
+             str(out / "p1_a_detections.json"), str(video),
+             "--pose-model", args.pose_model,
+             "--team-engine", args.team_engine]
+    if args.contrastive_checkpoint:
+        cmd_b.extend(["--contrastive-checkpoint", args.contrastive_checkpoint])
+    if args.ref_classifier:
+        cmd_b.extend(["--ref-classifier", args.ref_classifier])
+    cmd_c = [PYTHON, "-u", str(SRC / "p1_c_numbers.py"),
+             str(out / "p1_a_detections.json"), str(video),
+             "--pose-model", args.pose_model]
     if args.parseq_checkpoint:
-        cmd.extend(["--parseq-checkpoint", args.parseq_checkpoint])
-    if not step("Stage 1.c — Numbers", cmd,
-                [out / "p1_c_numbers.json"], args.force):
+        cmd_c.extend(["--parseq-checkpoint", args.parseq_checkpoint])
+    ok_b, ok_c = steps_parallel(
+        [
+            ("Stage 1.b — Teams",   cmd_b, [out / "p1_b_teams.json"],
+             "p1_b_teams"),
+            ("Stage 1.c — Numbers", cmd_c, [out / "p1_c_numbers.json"],
+             "p1_c_numbers"),
+        ],
+        force=args.force,
+        log_dir=out,
+    )
+    if not ok_b:
+        raise SystemExit("Stage 1.b failed — halting Phase 1")
+    if not ok_c:
         raise SystemExit("Stage 1.c failed — halting Phase 1")
 
 
@@ -249,6 +334,13 @@ def main():
                     help="Stage 1.a: use HockeyAI weights (recommended)")
     g1.add_argument("--training-mode", action="store_true",
                     help="Stage 1.a: disable 1-puck-per-frame filter")
+    g1.add_argument("--detect-fps", type=float, default=30.0,
+                    help="Stage 1.a: target detection frame-rate (default 30). "
+                         "On 60fps source video this halves the detection "
+                         "wall-clock; pass 60 to disable sub-sampling. "
+                         "Frame indices in p1_a_detections.json stay aligned "
+                         "to the source video, and Stage 3.b carries "
+                         "detections forward across skipped frames.")
     g1.add_argument("--model", type=str, default=None,
                     help="Stage 1.a: COCO YOLO weights (ignored when --hockey-model)")
     g1.add_argument("--conf", type=float, default=0.3,
@@ -259,6 +351,25 @@ def main():
                     help="Stage 1.a: tracker config")
     g1.add_argument("--pose-model", type=str, default="yolo26l-pose.pt",
                     help="Stage 1.b + Stage 1.c: YOLO pose weights")
+    g1.add_argument("--team-engine", type=str, default="hsv",
+                    choices=["hsv", "osnet", "siglip", "contrastive"],
+                    help="Stage 1.b: team-classification backend. "
+                         "hsv (default — fast, no extra model), "
+                         "osnet (OSNet x0_25 medoid embeddings), "
+                         "siglip (Roboflow SigLIP+UMAP), "
+                         "contrastive (Koshkina triplet model — best "
+                         "overall in the 6-clip bench, 0.896 vs hsv 0.788; "
+                         "needs models/contrastive_team_rilh.pt).")
+    g1.add_argument("--contrastive-checkpoint", type=str, default=None,
+                    help="Stage 1.b: path to contrastive-team checkpoint "
+                         "(used only with --team-engine contrastive). "
+                         "Default location: models/contrastive_team_rilh.pt")
+    g1.add_argument("--ref-classifier", type=str, default=None,
+                    help="Stage 1.b: optional path to a referee binary "
+                         "classifier (tools/finetune_ref_classifier.py "
+                         "output). When set, every track is tagged with "
+                         "is_referee + ref_score in p1_b_teams.json. "
+                         "Orthogonal to --team-engine.")
     g1.add_argument("--parseq-checkpoint", type=str, default=None,
                     help="Stage 1.c: custom PARSeq checkpoint (default = baudm "
                          "pretrained); use models/parseq_hockey_rilh.pt for "
