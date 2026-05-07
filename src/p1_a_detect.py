@@ -287,7 +287,7 @@ def run(
             "backend": "hockeyai" if hockey_mode else "coco",
             "tracker": tracker,
             "frames": all_frames,
-        }, f)
+        }, f, indent=2)
 
     print(f"\nDone.")
     print(f"  Annotated video: {annotated_path}")
@@ -311,7 +311,7 @@ def main():
                         help="Tracker config: bytetrack.yaml (default), botsort.yaml, "
                              "or a path to a custom YAML (e.g. configs/botsort_reid.yaml).")
     parser.add_argument("--conf", type=float, default=0.3, help="Detection confidence threshold")
-    parser.add_argument("--imgsz", type=int, default=1280,
+    parser.add_argument("--imgsz", type=int, default=1920,
                         help="Inference image size — bigger helps puck detection")
     parser.add_argument("--training-mode", action="store_true",
                         help="Disable the default 1-puck-per-frame filter. "

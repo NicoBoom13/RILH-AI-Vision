@@ -187,37 +187,36 @@ def run_p1_detect_track(video, out, args):
         print("  ⚠ Pose pre-extract failed — 1.b/1.c will fall back "
               "to inline pose. Continuing.")
 
-    # Stage 1.b + Stage 1.c run in parallel — they share the pose
-    # cache produced above, so neither needs to run pose, and they
-    # don't write to any shared file. The PARSeq OCR (1.c) and the
-    # team engine (1.b) each get their own GPU stream; on MPS this
-    # roughly halves the combined wall-clock vs sequential.
+    # Stage 1.b → Stage 1.c run **sequentially**: 1.c reads
+    # p1_b_teams.json so it can namespace jersey numbers by team
+    # (T0#14 ≠ T1#14). The earlier parallel layout broke that
+    # invariant — without team labels at OCR time, two players with
+    # the same number on opposite teams could merge into one
+    # player_group. Both stages still benefit from the shared pose
+    # cache produced above (so neither re-runs pose).
     cmd_b = [PYTHON, "-u", str(SRC / "p1_b_teams.py"),
              str(out / "p1_a_detections.json"), str(video),
-             "--pose-model", args.pose_model,
-             "--team-engine", args.team_engine]
+             "--pose-model", args.pose_model]
+    if args.team_engines:
+        cmd_b.extend(["--team-engines", args.team_engines])
+    else:
+        cmd_b.extend(["--team-engine", args.team_engine])
     if args.contrastive_checkpoint:
         cmd_b.extend(["--contrastive-checkpoint", args.contrastive_checkpoint])
     if args.ref_classifier:
         cmd_b.extend(["--ref-classifier", args.ref_classifier])
+    if not step("Stage 1.b — Teams", cmd_b,
+                [out / "p1_b_teams.json"], args.force):
+        raise SystemExit("Stage 1.b failed — halting Phase 1")
+
     cmd_c = [PYTHON, "-u", str(SRC / "p1_c_numbers.py"),
              str(out / "p1_a_detections.json"), str(video),
-             "--pose-model", args.pose_model]
+             "--pose-model", args.pose_model,
+             "--teams-json", str(out / "p1_b_teams.json")]
     if args.parseq_checkpoint:
         cmd_c.extend(["--parseq-checkpoint", args.parseq_checkpoint])
-    ok_b, ok_c = steps_parallel(
-        [
-            ("Stage 1.b — Teams",   cmd_b, [out / "p1_b_teams.json"],
-             "p1_b_teams"),
-            ("Stage 1.c — Numbers", cmd_c, [out / "p1_c_numbers.json"],
-             "p1_c_numbers"),
-        ],
-        force=args.force,
-        log_dir=out,
-    )
-    if not ok_b:
-        raise SystemExit("Stage 1.b failed — halting Phase 1")
-    if not ok_c:
+    if not step("Stage 1.c — Numbers", cmd_c,
+                [out / "p1_c_numbers.json"], args.force):
         raise SystemExit("Stage 1.c failed — halting Phase 1")
 
 
@@ -345,7 +344,7 @@ def main():
                     help="Stage 1.a: COCO YOLO weights (ignored when --hockey-model)")
     g1.add_argument("--conf", type=float, default=0.3,
                     help="Stage 1.a: detection confidence threshold")
-    g1.add_argument("--imgsz", type=int, default=1280,
+    g1.add_argument("--imgsz", type=int, default=1920,
                     help="Stage 1.a: inference image size")
     g1.add_argument("--tracker", type=str, default="bytetrack.yaml",
                     help="Stage 1.a: tracker config")
@@ -353,13 +352,23 @@ def main():
                     help="Stage 1.b + Stage 1.c: YOLO pose weights")
     g1.add_argument("--team-engine", type=str, default="hsv",
                     choices=["hsv", "osnet", "siglip", "contrastive"],
-                    help="Stage 1.b: team-classification backend. "
+                    help="Stage 1.b: SINGLE-engine backend (legacy mode). "
+                         "Ignored when --team-engines is set. "
                          "hsv (default — fast, no extra model), "
                          "osnet (OSNet x0_25 medoid embeddings), "
                          "siglip (Roboflow SigLIP+UMAP), "
                          "contrastive (Koshkina triplet model — best "
                          "overall in the 6-clip bench, 0.896 vs hsv 0.788; "
                          "needs models/contrastive_team_rilh.pt).")
+    g1.add_argument("--team-engines", type=str, default=None,
+                    help="Stage 1.b: MULTI-engine mode — comma-separated list "
+                         "(e.g. 'contrastive,hsv'). Each track gets a "
+                         "team_votes array with one entry per engine, plus a "
+                         "team_id_best summary. Stage 3.a uses these as a "
+                         "SOFT prior (cross-team penalty instead of hard "
+                         "reject) so a strong appearance/OCR signal can "
+                         "correct a single mis-classified engine. Overrides "
+                         "--team-engine when set.")
     g1.add_argument("--contrastive-checkpoint", type=str, default=None,
                     help="Stage 1.b: path to contrastive-team checkpoint "
                          "(used only with --team-engine contrastive). "

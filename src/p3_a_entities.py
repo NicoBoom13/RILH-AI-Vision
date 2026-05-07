@@ -169,15 +169,36 @@ def extract_track_embeddings(tracks_data, video_path, extractor,
 
 
 def index_p1b_p1c(teams, numbers, team_conf_floor):
-    """Return per-tid dicts: team_id, is_goaltender, jersey_number (+conf).
-    Tracks with team vote_confidence < floor return team_id=None
-    (ineligible for merging into any entity with a teammate — they
-    stay as singletons)."""
+    """Return per-tid dicts: team_id (best), team_conf, team_votes
+    (multi-engine list), is_goaltender, jersey_number, jersey_conf.
+
+    team_id is the BEST prior from Stage 1.b (max-confidence engine).
+    team_votes is the full per-engine list `[{engine, team_id,
+    confidence}, ...]` used by collect_entities for downstream voting.
+    Tracks with no usable prior (team_id is None or team_conf < floor)
+    still return their full team_votes so a strong signal in one
+    engine can re-instate them at the entity level.
+    """
     team_of = {}
+    team_conf = {}
+    team_votes = {}
     is_goalie = {}
     for tid_str, info in (teams or {}).get("tracks", {}).items():
         tid = int(tid_str)
-        if info.get("vote_confidence", 0) >= team_conf_floor:
+        vc = float(info.get("vote_confidence", info.get("team_score", 0.0)))
+        team_conf[tid] = vc
+        # New multi-engine field, falls back to a synthetic single-engine
+        # vote when reading old single-engine p1_b_teams.json.
+        votes = info.get("team_votes")
+        if not votes:
+            t = info.get("team_id")
+            if t is not None:
+                votes = [{"engine": info.get("team_engine", "primary"),
+                          "team_id": int(t), "confidence": vc}]
+            else:
+                votes = []
+        team_votes[tid] = votes
+        if vc >= team_conf_floor and info.get("team_id") is not None:
             team_of[tid] = info["team_id"]
         is_goalie[tid] = bool(info.get("is_goaltender", False))
 
@@ -189,27 +210,32 @@ def index_p1b_p1c(teams, numbers, team_conf_floor):
         if num:
             jersey[tid] = str(num)
             jersey_conf[tid] = float(info.get("jersey_conf", 0.0))
-    return team_of, is_goalie, jersey, jersey_conf
+    return team_of, team_conf, team_votes, is_goalie, jersey, jersey_conf
 
 
 def build_edges(embeddings, frame_sets, team_of, is_goalie,
                 jersey, jersey_conf,
                 ocr_bonus, goalie_bonus, ocr_conflict_conf_floor,
-                max_overlap_frames):
+                max_overlap_frames, cross_team_penalty):
     """All eligible merge candidate pairs, sorted by weight desc.
 
-    Rejected at this stage (never considered):
-      - different team (or one side has no team)
+    Hard rejects (never considered):
       - temporal overlap > max_overlap_frames
-      - OCR conflict: same team, different confident jersey numbers
+      - OCR conflict: different confident jersey numbers, same team
+        (the conflict block is intentionally team-aware: T0#14 vs
+        T1#14 is two players, not a conflict)
+
+    Soft penalty (still candidate but with reduced weight):
+      - Cross-team pair (or one side has no team): subtract
+        `cross_team_penalty`. Strong OCR/appearance signal can still
+        carry the pair through; weak appearance-only edges drop below
+        the merge threshold and stay rejected.
     """
     tids = sorted(embeddings.keys())
     edges = []
     for i in range(len(tids)):
         a = tids[i]
         ta = team_of.get(a)
-        if ta is None:
-            continue
         fa = frame_sets.get(a, frozenset())
         ja = jersey.get(a)
         ja_conf = jersey_conf.get(a, 0.0)
@@ -218,24 +244,35 @@ def build_edges(embeddings, frame_sets, team_of, is_goalie,
         for j in range(i + 1, len(tids)):
             b = tids[j]
             tb = team_of.get(b)
-            if tb is None or ta != tb:
-                continue
             fb = frame_sets.get(b, frozenset())
             overlap = len(fa & fb)
             if overlap > max_overlap_frames:
                 continue
             jb = jersey.get(b)
-            if ja and jb and ja != jb:
-                # OCR conflict — drop the pair if both numbers are confident
+            # Same-team OCR conflict: hard reject. Cross-team "same
+            # number" is not a conflict — it's two distinct identities.
+            if ja and jb and ja != jb and ta is not None and ta == tb:
                 if ja_conf >= ocr_conflict_conf_floor and \
                    jersey_conf.get(b, 0.0) >= ocr_conflict_conf_floor:
                     continue
             sim = float(np.dot(emb_a, embeddings[b]))
             w = sim
-            if ja and jb and ja == jb:
+            # OCR bonus only when same number AND same team (or one
+            # team unknown). Cross-team same-number is intentionally
+            # NOT bonused because that's two different players.
+            if ja and jb and ja == jb and (ta is None or tb is None or ta == tb):
                 w += ocr_bonus
             if is_goalie.get(a) and is_goalie.get(b):
                 w += goalie_bonus
+            # Soft same-team constraint: cross-team or unknown-team
+            # pair gets a fixed penalty. Stage 1.b is a prior, not a
+            # lock — strong signals (OCR-bonus +10, sim ~0.85) still
+            # win; weak appearance-only edges drop below threshold.
+            if ta is not None and tb is not None and ta != tb:
+                w -= cross_team_penalty
+            elif ta is None or tb is None:
+                # One side unknown — half penalty
+                w -= 0.5 * cross_team_penalty
             edges.append((w, a, b))
     edges.sort(key=lambda e: -e[0])
     return edges
@@ -297,9 +334,32 @@ def greedy_merge(edges, frame_sets, tids_all, sim_threshold,
     return uf, n_merges, n_skipped_overlap
 
 
-def collect_entities(uf, frame_sets, team_of, is_goalie,
-                     jersey, jersey_conf, total_frames):
-    """Walk clusters → entity records."""
+def collect_entities(uf, frame_sets, team_of, team_conf, team_votes_by_tid,
+                     is_goalie, jersey, jersey_conf, total_frames):
+    """Walk clusters → entity records.
+
+    Per-entity decisions use **weighted majority voting** that aggregates
+    every team vote from every engine across every member track, with
+    track duration × engine-confidence as the weight. Long high-conf
+    fragments and unanimous-engine fragments both outweigh single-engine
+    noisy ones:
+
+      - team_id: ∑ over (members, engines) of frames × engine_conf,
+        bucketed by the team_id that engine assigned. Winner = argmax.
+        team_score = winning_weight / total_weight (in [0, 1];
+        1.0 = unanimous across every member × every engine).
+      - is_goaltender: > 50 % of the entity's union frames come from
+        tracks tagged goalie (no confidence component because Stage 1.b
+        emits a binary tag, not a probability).
+      - jersey_number: ∑ (track_frames × jersey_conf) per candidate
+        number; winner = argmax. jersey_score = winning_weight /
+        total_weight (or 0 if no track had an OCR'd number).
+
+    The winning decisions are then **propagated** back to every member
+    track via the entity_id pointer Stage 3.b uses (entity_for_tid),
+    which means a track whose Stage 1.b said "team 0" but whose entity
+    voted "team 1" will render as team 1 in the final video.
+    """
     by_root = defaultdict(list)
     for tid in uf.parent:
         by_root[uf.find(tid)].append(tid)
@@ -308,26 +368,49 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
     unmatched = []
 
     for root, members in by_root.items():
-        team_ids = {team_of[t] for t in members if t in team_of}
-        team_id = next(iter(team_ids)) if team_ids else None
-        # Entity is goalie only if MORE THAN HALF the entity's frame
-        # coverage comes from goalie-tagged tracks. Counting tracks alone
-        # would let one short noisy goalie-track flip a 10-track entity;
-        # weighting by frames makes the majority track-life-aware.
+        # ---- weighted vote: team_id (multi-engine, multi-track) ----
+        # Aggregate every engine vote of every member track. The weight
+        # is (track_frames × engine_confidence): a long fragment + a
+        # high-conf engine vote both push the same team. Cross-engine
+        # disagreement on a single track is rare but real (it's why we
+        # multi-engine in the first place); when it happens the vote
+        # naturally resolves toward whichever side has more weight.
+        vote_buckets = defaultdict(float)
+        for t in members:
+            tf = len(frame_sets.get(t, frozenset()))
+            for v in team_votes_by_tid.get(t, []):
+                tid_team = v.get("team_id")
+                if tid_team is None:
+                    continue
+                vote_buckets[int(tid_team)] += tf * float(v.get("confidence", 0.0))
+        if vote_buckets:
+            team_id = max(vote_buckets, key=vote_buckets.get)
+            total_w = sum(vote_buckets.values())
+            team_score = vote_buckets[team_id] / total_w if total_w > 0 else 0.0
+        else:
+            team_id, team_score = None, 0.0
+
+        # ---- frame-weighted is_goaltender (unchanged) ----
         goalie_frames = sum(len(frame_sets.get(t, frozenset()))
                             for t in members if is_goalie.get(t, False))
         total_member_frames = sum(len(frame_sets.get(t, frozenset()))
                                   for t in members)
         any_goalie = (goalie_frames / max(total_member_frames, 1)) > 0.5
 
-        # Jersey: majority vote weighted by OCR confidence
+        # ---- weighted vote: jersey_number ----
+        # Weight = (frames covered by track) × (OCR confidence).
+        # Multiplying by frame coverage avoids one bad short fragment
+        # with a high-conf wrong OCR outvoting a long fragment with a
+        # consistent moderate-conf right OCR.
         jn_votes = defaultdict(float)
         for t in members:
             if t in jersey:
-                jn_votes[jersey[t]] += jersey_conf.get(t, 0.0)
+                w = len(frame_sets.get(t, frozenset())) * jersey_conf.get(t, 0.0)
+                jn_votes[jersey[t]] += w
         if jn_votes:
             jn_best = max(jn_votes, key=jn_votes.get)
-            jn_score = jn_votes[jn_best]
+            total_jn = sum(jn_votes.values())
+            jn_score = jn_votes[jn_best] / total_jn if total_jn > 0 else 0.0
         else:
             jn_best, jn_score = None, 0.0
 
@@ -340,12 +423,24 @@ def collect_entities(uf, frame_sets, team_of, is_goalie,
         last_frame = max(frames_union)
         covered = len(frames_union)
 
+        # Identity string. Team-namespaced jersey number — two players
+        # with the same number on different teams must read as
+        # different identities. Used by Stage 3.b for the visible label.
+        if team_id is not None and jn_best:
+            identity = f"T{team_id}#{jn_best}"
+        elif team_id is not None:
+            identity = f"T{team_id}#??"
+        else:
+            identity = None
+
         record = {
             "track_ids": sorted(members),
             "team_id": team_id,
+            "team_score": round(team_score, 3),
             "is_goaltender": any_goalie,
             "jersey_number": jn_best,
-            "jersey_score": jn_score,
+            "jersey_score": round(jn_score, 3),
+            "identity": identity,
             "first_frame": first_frame,
             "last_frame": last_frame,
             "total_frames_covered": covered,
@@ -398,7 +493,9 @@ def report(entities, unmatched, team_of, is_goalie):
     for i, e in enumerate(entities[:10]):
         num = f"#{e['jersey_number']}" if e["jersey_number"] else "#??"
         role = "G" if e["is_goaltender"] else "S"
-        print(f"  [{i}] team={e['team_id']} {role} {num:>4s}  "
+        ts = e.get("team_score", 0.0)
+        js = e.get("jersey_score", 0.0)
+        print(f"  [{i}] team={e['team_id']}({ts:.2f}) {role} {num:>4s}({js:.2f})  "
               f"tracks={len(e['track_ids']):3d}  "
               f"frames={e['first_frame']:>4d}-{e['last_frame']:<4d}  "
               f"cover={e['coverage_pct']:>5.1f}%")
@@ -407,7 +504,7 @@ def report(entities, unmatched, team_of, is_goalie):
 def run(detections_json, teams_json, numbers_json, video_path, output,
         samples_per_track, batch_size, sim_threshold,
         ocr_bonus, ocr_conflict_conf_floor, goalie_bonus,
-        team_conf_floor, max_overlap_frames,
+        team_conf_floor, max_overlap_frames, cross_team_penalty,
         osnet_model):
     """Run the entity-clustering pipeline end-to-end.
 
@@ -428,9 +525,8 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     if numbers is None:
         print(f"Warning: {numbers_json} missing — OCR signal won't be used")
 
-    team_of, is_goalie, jersey, jersey_conf = index_p1b_p1c(
-        teams, numbers, team_conf_floor
-    )
+    team_of, team_conf, team_votes_by_tid, is_goalie, jersey, jersey_conf = \
+        index_p1b_p1c(teams, numbers, team_conf_floor)
     n_eligible = sum(1 for _ in team_of)
     n_teamless = sum(
         1 for tid_str, info in teams["tracks"].items()
@@ -451,13 +547,14 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     frame_sets = track_frame_sets(detections_data)
     tids_all = set(frame_sets.keys()) | set(embeddings.keys())
 
-    print(f"\nBuilding merge graph…")
+    print(f"\nBuilding merge graph (cross-team penalty={cross_team_penalty})…")
     edges = build_edges(
         embeddings, frame_sets, team_of, is_goalie,
         jersey, jersey_conf,
         ocr_bonus=ocr_bonus, goalie_bonus=goalie_bonus,
         ocr_conflict_conf_floor=ocr_conflict_conf_floor,
         max_overlap_frames=max_overlap_frames,
+        cross_team_penalty=cross_team_penalty,
     )
     print(f"  {len(edges)} eligible pairs")
 
@@ -470,8 +567,8 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
     print(f"  {n_merges} merges performed, {n_skipped_overlap} skipped (overlap)")
 
     entities, unmatched = collect_entities(
-        uf, frame_sets, team_of, is_goalie,
-        jersey, jersey_conf,
+        uf, frame_sets, team_of, team_conf, team_votes_by_tid,
+        is_goalie, jersey, jersey_conf,
         detections_data["total_frames"],
     )
 
@@ -499,6 +596,7 @@ def run(detections_json, teams_json, numbers_json, video_path, output,
             "team_conf_floor": team_conf_floor,
             "ocr_conflict_conf_floor": ocr_conflict_conf_floor,
             "max_overlap_frames": max_overlap_frames,
+            "cross_team_penalty": cross_team_penalty,
             "osnet_model": osnet_model,
         },
         "n_entities": len(entities),
@@ -525,23 +623,39 @@ def main():
     p.add_argument("video", type=str)
     p.add_argument("--output", type=str, default=None,
                    help="Output JSON (default: <detections_dir>/p3_a_entities.json)")
-    p.add_argument("--samples-per-track", type=int, default=8)
+    p.add_argument("--samples-per-track", type=int, default=15,
+                   help="OSNet medoid uses up to N highest-conf detections "
+                        "per track. Higher = more stable embedding, slower "
+                        "embedding wall-clock. Default 15 (was 8).")
     p.add_argument("--batch-size", type=int, default=16)
     p.add_argument("--sim-threshold", type=float, default=0.65,
                    help="Cosine similarity floor for non-OCR merges")
     p.add_argument("--ocr-bonus", type=float, default=10.0)
     p.add_argument("--ocr-conflict-conf-floor", type=float, default=0.40,
-                   help="If both tracks carry confident but different numbers, "
-                        "reject the pair. Stricter merge gating prevents two "
-                        "different players (with moderately confident but "
-                        "conflicting OCR) from ending up in the same entity.")
+                   help="If both tracks carry confident but different numbers "
+                        "AND the same team, reject the pair. Cross-team "
+                        "same-number is intentionally NOT a conflict — that's "
+                        "two distinct identities (T0#14 vs T1#14).")
     p.add_argument("--goalie-bonus", type=float, default=0.05)
-    p.add_argument("--team-conf-floor", type=float, default=0.67,
-                   help="Drop tracks below this P1.b vote-confidence from "
-                        "the merge graph (they become unmatched).")
-    p.add_argument("--max-overlap-frames", type=int, default=0,
-                   help="Strict zero by default (no shared frame between "
-                        "tracks in the same entity).")
+    p.add_argument("--team-conf-floor", type=float, default=0.50,
+                   help="Tracks with team_score below this floor still get "
+                        "their team_votes propagated (so engine vote drives "
+                        "the entity decision); they're just not used as the "
+                        "anchor for the soft same-team prior. Lowered from "
+                        "0.67 since the soft constraint replaces hard reject.")
+    p.add_argument("--max-overlap-frames", type=int, default=2,
+                   help="Tracks in the same entity may share up to this many "
+                        "frames (default 2). Loosened from 0 to absorb the "
+                        "1-frame box-collision artefact during scrums where "
+                        "the tracker hands a player off cleanly but with a "
+                        "single overlapping frame.")
+    p.add_argument("--cross-team-penalty", type=float, default=0.30,
+                   help="Soft same-team constraint: cross-team pair weight is "
+                        "reduced by this amount (instead of hard reject). "
+                        "Strong signals (OCR bonus +10, sim ~0.85) still "
+                        "carry the merge; weak appearance-only edges drop "
+                        "below threshold. Set to 100.0 to recover the old "
+                        "hard-reject behaviour.")
     p.add_argument("--osnet", type=str, default="osnet_x0_25",
                    help="Torchreid model name (osnet_x0_25 = smallest).")
     args = p.parse_args()
@@ -563,6 +677,7 @@ def main():
         goalie_bonus=args.goalie_bonus,
         team_conf_floor=args.team_conf_floor,
         max_overlap_frames=args.max_overlap_frames,
+        cross_team_penalty=args.cross_team_penalty,
         osnet_model=args.osnet,
     )
 

@@ -344,17 +344,24 @@ def stream_needed_frames(video_path, indices):
 
 
 def merge_tracks_by_number(enriched, by_tid):
-    """Tracks with the same confident jersey number whose time spans do not
-    overlap are considered the same player (tracker break)."""
-    number_to_tids = defaultdict(list)
+    """Tracks with the same confident (team_id, jersey_number) and
+    non-overlapping time spans are the same player (tracker break).
+
+    The grouping key includes team_id when available — same number on
+    team 0 and team 1 is two distinct identities and must NOT merge.
+    Tracks without a team label fall back to grouping by jersey number
+    alone (their team is unknown so the conservative thing is to allow
+    a merge if the temporal/visual evidence agrees)."""
+    key_to_tids = defaultdict(list)
     for tid, data in enriched.items():
         jn = data["jersey_number"]
         if jn is None:
             continue
-        number_to_tids[jn].append(tid)
+        team = data.get("team_id")  # None when --teams-json wasn't passed
+        key_to_tids[(team, jn)].append(tid)
 
     merged_groups = []
-    for number, tids in number_to_tids.items():
+    for (team, number), tids in key_to_tids.items():
         spans = []
         for tid in tids:
             dets = by_tid[int(tid)]
@@ -375,6 +382,7 @@ def merge_tracks_by_number(enriched, by_tid):
         for cluster in clusters:
             if len(cluster) >= 2:
                 merged_groups.append({
+                    "team_id": team,
                     "jersey_number": number,
                     "track_ids": [c["tid"] for c in cluster],
                     "frame_start": cluster[0]["start"],
@@ -407,6 +415,7 @@ def run(
     parseq_checkpoint: Path | None = None,
     frame_stride: int | None = None,
     pose_cache_path: Path | None = None,
+    teams_json: Path | None = None,
 ):
     """Run the full per-track jersey-number identification pipeline.
 
@@ -428,6 +437,25 @@ def run(
     detections_data = json.loads(detections_json.read_text())
     by_tid = group_detections_by_track(detections_data)
     print(f"Player tracks: {len(by_tid)}")
+
+    # Optional Stage 1.b teams.json — gives each track its team_id +
+    # vote_confidence. Used to namespace jersey numbers by team
+    # (T0#14 and T1#14 are two distinct identities) so downstream
+    # per-team grouping in merge_tracks_by_number doesn't accidentally
+    # merge across teams. When teams_json is None, team_id stays None
+    # and the merge falls back to jersey-only.
+    team_by_tid = {}
+    team_conf_by_tid = {}
+    if teams_json is not None and teams_json.exists():
+        teams_data = json.loads(teams_json.read_text())
+        for tid_str, info in teams_data.get("tracks", {}).items():
+            team_by_tid[int(tid_str)] = info.get("team_id")
+            team_conf_by_tid[int(tid_str)] = float(
+                info.get("vote_confidence", 0.0))
+        print(f"Loaded teams from {teams_json}: "
+              f"{len(team_by_tid)} tracks tagged")
+    elif teams_json is not None:
+        print(f"  ⚠ {teams_json} not found — proceeding without team labels")
 
     if frame_stride is not None:
         samples = pick_uniform_samples(by_tid, frame_stride)
@@ -598,6 +626,8 @@ def run(
             "jersey_number": jn,
             "jersey_votes": dict(num_votes),
             "jersey_conf": jersey_conf,
+            "team_id": team_by_tid.get(tid),
+            "team_vote_confidence": team_conf_by_tid.get(tid, 0.0),
             "class_name": by_tid[tid][0].get("class_name", "player"),
         }
 
@@ -606,6 +636,7 @@ def run(
     output = {
         "source_detections": str(detections_json),
         "source_video": str(video_path),
+        "source_teams": str(teams_json) if teams_json else None,
         "samples_per_track": samples_per_track,
         "ocr_min_conf": ocr_min_conf,
         "pose_model": pose_path,
@@ -623,7 +654,10 @@ def run(
     print(f"  Player groups (merged tracks): {len(merged_groups)}")
     if merged_groups:
         for g in sorted(merged_groups, key=lambda x: -len(x["track_ids"]))[:10]:
-            print(f"    #{g['jersey_number']}: tracks {g['track_ids']} "
+            team = g.get("team_id")
+            ident = f"T{team}#{g['jersey_number']}" if team is not None \
+                    else f"#{g['jersey_number']}"
+            print(f"    {ident}: tracks {g['track_ids']} "
                   f"(frames {g['frame_start']}–{g['frame_end']})")
 
 
@@ -671,6 +705,15 @@ def main():
                        "it exists). When provided, pose results for cached "
                        "frames are looked up instead of re-computed; cache "
                        "misses fall back to inline pose inference.")
+    p.add_argument("--teams-json", type=str, default=None,
+                   help="Optional Stage 1.b output (p1_b_teams.json). When "
+                        "provided, each track inherits its team_id + "
+                        "vote_confidence from Stage 1.b, and "
+                        "merge_tracks_by_number namespaces grouping by "
+                        "(team_id, jersey_number) so the same number on "
+                        "team 0 and team 1 stays as two distinct identities. "
+                        "Default: <detections_dir>/p1_b_teams.json when it "
+                        "exists, else None (jersey-only grouping).")
     args = p.parse_args()
 
     detections_json = Path(args.detections_json)
@@ -688,6 +731,12 @@ def main():
     if not pose_cache.exists():
         pose_cache = None
 
+    # Default teams_json: alongside the detections JSON when present.
+    teams_json = (Path(args.teams_json) if args.teams_json
+                  else detections_json.with_name("p1_b_teams.json"))
+    if not teams_json.exists():
+        teams_json = None
+
     run(
         detections_json, video, output,
         args.pose_model, args.samples_per_track, args.ocr_min_conf,
@@ -696,6 +745,7 @@ def main():
         parseq_checkpoint=parseq_ckpt,
         frame_stride=args.frame_stride,
         pose_cache_path=pose_cache,
+        teams_json=teams_json,
     )
 
 

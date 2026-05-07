@@ -1002,26 +1002,54 @@ def render_preview(crops_by_tid, team_of, votes_by_tid, team_centers_bgr,
     cv2.imwrite(str(output_path), grid)
 
 
+def _align_team_labels_to_ref(team_of_ref, team_of_other):
+    """Two engines independently assign 0/1 to the two teams: their
+    "team 0" may be the same physical team or its opposite. Pick the
+    relabelling of `team_of_other` that maximises agreement with the
+    reference, by counting same- vs swap-count over shared track ids.
+
+    Returns ``(aligned_team_of, flipped: bool)``.
+    """
+    same = sum(1 for tid, t in team_of_other.items()
+               if team_of_ref.get(tid) == t)
+    swap = sum(1 for tid, t in team_of_other.items()
+               if team_of_ref.get(tid) is not None and team_of_ref[tid] != t)
+    if swap > same:
+        return {tid: 1 - t for tid, t in team_of_other.items()}, True
+    return dict(team_of_other), False
+
+
 def run(detections_json, video_path, output, samples_per_track, pose_model_name,
-        pose_imgsz, preview_cols, space, multi_grid, engine,
+        pose_imgsz, preview_cols, space, multi_grid, engines,
         ref_classifier_path=None, pose_cache_path=None):
     """Run the team-classification pipeline end-to-end.
 
     Loads ``p1_a_detections.json``, samples crops from the source video,
-    dispatches to the requested team engine (``engine.cluster_tracks``),
-    and writes ``p1_b_teams.json`` plus a debug ``teams_preview.png``.
-    The engine sees both the dominant-colour stat (used by HSV) and the
-    raw torso BGR crops (used by embedding engines), set by
-    ``engine.needs_torso_crops``.
+    dispatches to **every** requested team engine (``engine.cluster_tracks``),
+    aligns their 0/1 labels to the first engine, and writes
+    ``p1_b_teams.json`` plus a debug ``teams_preview.png`` (preview is
+    based on engine[0]). Each engine sees both the dominant-colour stat
+    (used by HSV) and the raw torso BGR crops (used by embedding engines),
+    set by ``engine.needs_torso_crops``.
+
+    Multi-engine output: every track carries a ``team_votes`` array
+    (one entry per engine) + a ``team_id`` / ``team_score`` /
+    ``team_consensus`` summary. Stage 3.a uses these as a SOFT prior
+    (the same-team constraint becomes a penalty rather than a hard
+    block), so a strong OCR or appearance signal downstream can
+    correct a mis-classified track.
 
     When ``pose_cache_path`` points at a pickle produced by
     ``src.pose_cache``, pose results for cached frames are looked up
     instead of re-computed (saves the duplicated pose pass that 1.b
     and 1.c would otherwise both pay for).
     """
+    if not engines:
+        raise SystemExit("run() needs at least one team engine")
     device = pick_device()
     print(f"Device: {device}")
-    print(f"Team engine: {engine.name}")
+    print(f"Team engines: {', '.join(e.name for e in engines)}")
+    primary = engines[0]
 
     detections_data = json.loads(detections_json.read_text())
     all_tids = {
@@ -1047,12 +1075,14 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         print(f"Loading pose model: {pose_path}")
         pose_model = YOLO(pose_path)
 
+    # Crops are needed once; if any engine wants torso crops, keep them.
+    keep_torso = any(e.needs_torso_crops for e in engines)
     print(f"Sampling jersey colors (≤{samples_per_track}/track, pose-based, "
           f"{multi_grid[0]}×{multi_grid[1]} multi-point)…")
     crops_by_tid = sample_jersey_colors(
         detections_data, video_path, pose_model, device,
         samples_per_track, pose_imgsz, multi_grid,
-        keep_torso_crops=engine.needs_torso_crops,
+        keep_torso_crops=keep_torso,
         pose_cache=pose_cache,
     )
     n_crops = sum(len(v["crop_colors"]) for v in crops_by_tid.values())
@@ -1060,22 +1090,59 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
           f"({n_crops} crops total)")
 
     fit_tids = skater_tids & set(crops_by_tid.keys())
-    print(f"Clustering teams ({engine.name}, fitting on {len(fit_tids)} "
-          f"skater tracks, classifying all)…")
-    team_of, centers, votes_by_tid, margin = engine.cluster_tracks(
-        crops_by_tid, fit_tids,
-    )
+
+    # Run every engine, then align their 0/1 labels to engine[0].
+    # primary_results is the engine[0] tuple (used for preview + back-
+    # compat fields like vote_distribution / cluster_margin). Each entry
+    # in `engine_outputs` carries the post-alignment team_of, the raw
+    # vote counts, and a per-track confidence (max/sum) ready for the
+    # multi-engine summary.
+    engine_outputs = []
+    for ei, eng in enumerate(engines):
+        print(f"Clustering teams ({eng.name}, fitting on {len(fit_tids)} "
+              f"skater tracks, classifying all)…")
+        team_of_e, centers_e, votes_e, margin_e = eng.cluster_tracks(
+            crops_by_tid, fit_tids,
+        )
+        if ei == 0:
+            aligned = dict(team_of_e)
+            flipped = False
+        else:
+            aligned, flipped = _align_team_labels_to_ref(
+                engine_outputs[0]["team_of_aligned"], team_of_e,
+            )
+            if flipped:
+                # Centers also swap so cluster 0/1 stays consistent across engines
+                centers_e = [centers_e[1], centers_e[0]]
+                votes_e = {tid: [v[1], v[0]] for tid, v in votes_e.items()}
+                print(f"  → labels flipped to align with {engines[0].name}")
+        # Per-track confidence = winning_count / total_count (uses
+        # post-flip votes, so confidence is in the assigned team).
+        conf_e = {}
+        for tid, v in votes_e.items():
+            s = sum(v)
+            if s > 0 and tid in aligned:
+                conf_e[tid] = v[aligned[tid]] / s
+            else:
+                conf_e[tid] = 0.0
+        engine_outputs.append({
+            "name": eng.name,
+            "team_of_aligned": aligned,
+            "centers_bgr": centers_e,
+            "votes": votes_e,
+            "conf": conf_e,
+            "margin": margin_e,
+            "flipped": flipped,
+        })
+    primary_out = engine_outputs[0]
 
     # Optional referee binary classifier — post-hoc, orthogonal to the
     # team engine. Tags each track with is_referee + ref_score.
     ref_results = {}
     if ref_classifier_path is not None:
-        if not engine.needs_torso_crops:
-            # The HSV engine doesn't keep torso crops by default. Re-sample
-            # them so the classifier has something to look at; cheap given
-            # we already loaded the pose model + decoded the frames once.
+        if not keep_torso:
             print(f"Re-sampling torso crops for ref classifier "
-                  f"(engine {engine.name} didn't keep them)…")
+                  f"(no engine kept them)…")
             crops_by_tid_with_torso = sample_jersey_colors(
                 detections_data, video_path, pose_model, device,
                 samples_per_track, pose_imgsz, multi_grid,
@@ -1091,31 +1158,77 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
         n_refs = sum(1 for r in ref_results.values() if r["is_referee"])
         print(f"  Tagged {n_refs}/{len(ref_results)} tracks as referee")
 
-    n0 = sum(1 for t in team_of.values() if t == 0)
-    n1 = sum(1 for t in team_of.values() if t == 1)
-    low_conf = 0
+    # Build the multi-engine summary per track. team_id_best = engine
+    # with the highest confidence wins. team_consensus = fraction of
+    # engines agreeing with team_id_best (1.0 = unanimous).
+    summary_by_tid = {}
+    for tid in crops_by_tid:
+        votes_per_eng = []
+        for eo in engine_outputs:
+            if tid not in eo["team_of_aligned"]:
+                continue
+            votes_per_eng.append({
+                "engine": eo["name"],
+                "team_id": int(eo["team_of_aligned"][tid]),
+                "confidence": float(eo["conf"].get(tid, 0.0)),
+            })
+        if votes_per_eng:
+            best = max(votes_per_eng, key=lambda v: v["confidence"])
+            agree = sum(1 for v in votes_per_eng
+                        if v["team_id"] == best["team_id"])
+            consensus = agree / len(votes_per_eng)
+        else:
+            best = {"team_id": None, "confidence": 0.0}
+            consensus = 0.0
+        summary_by_tid[tid] = {
+            "team_votes": votes_per_eng,
+            "team_id_best": best["team_id"],
+            "team_score_best": best["confidence"],
+            "team_consensus": consensus,
+        }
+
+    # Headline numbers: use team_id_best for the per-team counts so
+    # the printed summary reflects the multi-engine outcome.
+    team_of_best = {tid: s["team_id_best"]
+                    for tid, s in summary_by_tid.items()
+                    if s["team_id_best"] is not None}
+    n0 = sum(1 for t in team_of_best.values() if t == 0)
+    n1 = sum(1 for t in team_of_best.values() if t == 1)
+    low_conf = sum(1 for s in summary_by_tid.values()
+                   if s["team_score_best"] < 0.67)
     goalie_split = [0, 0]
-    for tid, team in team_of.items():
-        total = sum(votes_by_tid[tid])
-        if total > 0 and votes_by_tid[tid][team] / total < 0.67:
-            low_conf += 1
+    for tid, t in team_of_best.items():
         if tid in goalie_tids:
-            goalie_split[team] += 1
+            goalie_split[t] += 1
+    centers = primary_out["centers_bgr"]
+    margin = primary_out["margin"]
     verdict = "OK" if margin >= 1.0 else "LOW — inspect preview"
-    print(f"  Team 0 (center BGR={centers[0]}): {n0} tracks")
-    print(f"  Team 1 (center BGR={centers[1]}): {n1} tracks")
+    print(f"  [primary={primary.name}] Team 0 (center BGR={centers[0]}): {n0} tracks")
+    print(f"  [primary={primary.name}] Team 1 (center BGR={centers[1]}): {n1} tracks")
     print(f"  Goaltender tracks split: team 0 = {goalie_split[0]}, "
           f"team 1 = {goalie_split[1]} (classified post-hoc, didn't fit centers)")
     print(f"  Tracks without usable sample: {len(all_tids) - len(crops_by_tid)}")
-    print(f"  Tracks with mixed votes (<67% agreement): {low_conf}")
-    print(f"  Cluster margin: {margin:.2f} — {verdict}")
+    print(f"  Tracks with low confidence (<0.67): {low_conf}")
+    print(f"  Cluster margin (primary engine): {margin:.2f} — {verdict}")
+    if len(engine_outputs) > 1:
+        # Pairwise agreement between engines (post-alignment).
+        for i in range(len(engine_outputs)):
+            for j in range(i + 1, len(engine_outputs)):
+                a, b = engine_outputs[i], engine_outputs[j]
+                shared = set(a["team_of_aligned"]) & set(b["team_of_aligned"])
+                agree = sum(1 for t in shared
+                            if a["team_of_aligned"][t] == b["team_of_aligned"][t])
+                pct = 100 * agree / max(len(shared), 1)
+                print(f"  Inter-engine agreement {a['name']} vs {b['name']}: "
+                      f"{agree}/{len(shared)} ({pct:.1f}%)")
 
     out_json = {
         "source_detections": str(detections_json),
         "source_video": str(video_path),
-        "version": "v3",
-        "method": f"pose_torso + engine={engine.name}",
-        "team_engine": engine.name,
+        "version": "v4",
+        "method": f"pose_torso + engines={[e.name for e in engines]}",
+        "team_engines": [e.name for e in engines],
+        "team_engine": primary.name,  # backward-compat (== engines[0].name)
         "samples_per_track": samples_per_track,
         "color_space": space,
         "multi_point_grid": list(multi_grid),
@@ -1124,16 +1237,29 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
             "Refs leak into clustering when Phase 1 used COCO (HockeyAI drops them)."
         ),
         "team_centers_bgr": [list(c) for c in centers],
+        "engines_meta": [
+            {
+                "name": eo["name"],
+                "centers_bgr": [list(c) for c in eo["centers_bgr"]],
+                "margin": eo["margin"],
+                "flipped_to_align": eo["flipped"],
+            }
+            for eo in engine_outputs
+        ],
         "cluster_margin": margin,
         "ref_classifier": str(ref_classifier_path) if ref_classifier_path else None,
         "tracks": {
             str(tid): {
-                "team_id": team_of[tid],
-                "vote_distribution": votes_by_tid[tid],
-                "vote_confidence": (
-                    votes_by_tid[tid][team_of[tid]] / sum(votes_by_tid[tid])
-                    if sum(votes_by_tid[tid]) > 0 else 0.0
-                ),
+                "team_id": summary_by_tid[tid]["team_id_best"],
+                "team_votes": summary_by_tid[tid]["team_votes"],
+                "team_score": summary_by_tid[tid]["team_score_best"],
+                "team_consensus": summary_by_tid[tid]["team_consensus"],
+                # backward-compat for downstream stages still reading
+                # `vote_confidence` / `vote_distribution`. These mirror
+                # the primary engine; new consumers should prefer
+                # team_score / team_votes.
+                "vote_distribution": primary_out["votes"].get(tid, [0, 0]),
+                "vote_confidence": summary_by_tid[tid]["team_score_best"],
                 "n_color_samples": len(crops_by_tid[tid]["crop_colors"]),
                 "is_goaltender": tid in goalie_tids,
                 "is_referee": ref_results.get(tid, {}).get("is_referee", False),
@@ -1146,8 +1272,10 @@ def run(detections_json, video_path, output, samples_per_track, pose_model_name,
     output.write_text(json.dumps(out_json, indent=2))
 
     preview_path = output.with_name("teams_preview.png")
-    render_preview(crops_by_tid, team_of, votes_by_tid, centers,
-                   preview_path, cols=preview_cols)
+    # Preview uses the primary engine's labels + votes for back-compat.
+    render_preview(crops_by_tid, primary_out["team_of_aligned"],
+                   primary_out["votes"], centers, preview_path,
+                   cols=preview_cols)
     print(f"\nDone.")
     print(f"  JSON:    {output}")
     print(f"  Preview: {preview_path}")
@@ -1182,13 +1310,22 @@ def main():
                         "3x2 = 6 sub-regions.")
     p.add_argument("--team-engine", choices=list(TEAM_ENGINES.keys()),
                    default="hsv",
-                   help="Team-classification backend. "
+                   help="Team-classification backend (single-engine mode). "
                         "hsv: per-crop k-means on dominant torso colour (default, "
                         "behaviour-equivalent to v2). "
                         "osnet: k=2 on OSNet x0_25 medoid embeddings. "
                         "siglip: SigLIP encode + UMAP + k-means (Roboflow recipe). "
                         "contrastive: Koshkina-style triplet model "
-                        "(--contrastive-checkpoint required).")
+                        "(--contrastive-checkpoint required). "
+                        "Ignored when --team-engines is set.")
+    p.add_argument("--team-engines", type=str, default=None,
+                   help="Multi-engine mode: comma-separated list of engines "
+                        "(e.g. 'contrastive,hsv'). Each track gets a "
+                        "team_votes array with one entry per engine plus a "
+                        "team_id_best (max-confidence) summary. Stage 3.a "
+                        "uses these as a SOFT prior so a strong appearance/"
+                        "OCR signal can correct a mis-classified track. "
+                        "When unset, falls back to the single --team-engine.")
     p.add_argument("--contrastive-checkpoint", type=str, default=None,
                    help="Path to a contrastive-team checkpoint (used only when "
                         "--team-engine contrastive). Default location: "
@@ -1224,11 +1361,19 @@ def main():
     if not pose_cache.exists():
         pose_cache = None
 
-    engine = TEAM_ENGINES[args.team_engine](args)
+    if args.team_engines:
+        engine_names = [n.strip() for n in args.team_engines.split(",") if n.strip()]
+        unknown = [n for n in engine_names if n not in TEAM_ENGINES]
+        if unknown:
+            raise SystemExit(f"Unknown team engine(s): {unknown}. "
+                             f"Choices: {list(TEAM_ENGINES.keys())}")
+    else:
+        engine_names = [args.team_engine]
+    engines = [TEAM_ENGINES[name](args) for name in engine_names]
 
     run(detections_json, video, output,
         args.samples_per_track, args.pose_model, args.pose_imgsz,
-        args.preview_cols, args.space, (rows, cols), engine,
+        args.preview_cols, args.space, (rows, cols), engines,
         ref_classifier_path=Path(args.ref_classifier) if args.ref_classifier else None,
         pose_cache_path=pose_cache)
 

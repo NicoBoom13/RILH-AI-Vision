@@ -54,6 +54,46 @@ def _darken(color: sv.Color, factor: float = GOALIE_DARKEN) -> sv.Color:
 GOALIE_TEAM_COLORS = [_darken(c) for c in TEAM_COLORS]
 
 
+def draw_multiline_label(frame, lines, anchor_xy, bg_bgr,
+                         text_scale=0.5, text_thickness=1, pad=2):
+    """Draw a 2-line label with an opaque rectangular background just
+    above the bbox. anchor_xy is the bbox top-left corner; the label
+    flows upward from there. Each line gets its own row, sized by
+    cv2.getTextSize so the bg matches the actual text bounds.
+
+    Used for players (team-coloured bg + white text). Refs share the
+    same code path with a black bg.
+    """
+    if not lines:
+        return frame
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    sizes = [cv2.getTextSize(t, font, text_scale, text_thickness)[0]
+             for t in lines]
+    line_h = max(s[1] for s in sizes) + 4  # vertical step per line
+    box_w = max(s[0] for s in sizes) + 2 * pad
+    box_h = line_h * len(lines) + pad
+    x0 = int(anchor_xy[0])
+    # Anchor the bottom of the label box flush with the top of the bbox.
+    y1 = int(anchor_xy[1]) - 1
+    y0 = y1 - box_h
+    h, w = frame.shape[:2]
+    if y0 < 0:
+        # Bbox is at the top of the frame — flip the label inside the bbox
+        y0 = int(anchor_xy[1]) + 1
+        y1 = y0 + box_h
+    x1 = min(w, x0 + box_w)
+    x0 = max(0, x0)
+    y0 = max(0, min(h - box_h - 1, y0))
+    y1 = y0 + box_h
+    cv2.rectangle(frame, (x0, y0), (x1, y1), bg_bgr, thickness=-1)
+    text_x = x0 + pad
+    for i, t in enumerate(lines):
+        baseline_y = y0 + pad + (i + 1) * line_h - 4
+        cv2.putText(frame, t, (text_x, baseline_y), font, text_scale,
+                    (255, 255, 255), text_thickness, cv2.LINE_AA)
+    return frame
+
+
 # --- Jersey color sampling & team clustering ---------------------------------
 
 def torso_crop_from_bbox(frame, xyxy):
@@ -253,27 +293,36 @@ def render(detections_data, numbers, team_of, video_path, output,
         they read at a glance and don't pollute a team's colour."""
         return bool(per_track_referee.get(tid_i, False))
 
-    # One annotator trio per visual category. Five categories total:
-    # team 0 skater (green) / team 0 goalie (dark green) / team 1
-    # skater (blue) / team 1 goalie (dark blue) / referee (black).
-    # supervision binds colour at construction time so each category
-    # needs its own annotator trio.
-    def _make_trio(color, trace_len=30):
+    # One annotator pair per visual category (box + trace only).
+    # Labels are drawn manually (see draw_multiline_label) so that
+    # they can span 2 lines (`e{eid}·t{tid}` then `S #NN`) — supervision's
+    # LabelAnnotator collapses newlines into a single line.
+    # Five categories total: team 0 skater (green) / team 0 goalie (dark
+    # green) / team 1 skater (blue) / team 1 goalie (dark blue) / referee
+    # (black). supervision binds colour at construction time so each
+    # category needs its own annotator pair.
+    def _make_pair(color, trace_len=30):
         return {
             "box": sv.BoxAnnotator(color=color, thickness=2),
-            "label": sv.LabelAnnotator(color=color, text_scale=0.5,
-                                       text_thickness=1),
             "trace": sv.TraceAnnotator(color=color, thickness=2,
                                        trace_length=trace_len),
         }
 
     annotators_by_key = {
         # ("team", team_id, is_goalie)
-        ("team", 0, False): _make_trio(TEAM_COLORS[0]),
-        ("team", 0, True):  _make_trio(GOALIE_TEAM_COLORS[0]),
-        ("team", 1, False): _make_trio(TEAM_COLORS[1]),
-        ("team", 1, True):  _make_trio(GOALIE_TEAM_COLORS[1]),
-        ("ref",):           _make_trio(REF_COLOR),
+        ("team", 0, False): _make_pair(TEAM_COLORS[0]),
+        ("team", 0, True):  _make_pair(GOALIE_TEAM_COLORS[0]),
+        ("team", 1, False): _make_pair(TEAM_COLORS[1]),
+        ("team", 1, True):  _make_pair(GOALIE_TEAM_COLORS[1]),
+        ("ref",):           _make_pair(REF_COLOR),
+    }
+    # BGR for label backgrounds (cv2.rectangle takes BGR tuples)
+    color_bgr_by_key = {
+        ("team", 0, False): (TEAM_COLORS[0].b, TEAM_COLORS[0].g, TEAM_COLORS[0].r),
+        ("team", 0, True):  (GOALIE_TEAM_COLORS[0].b, GOALIE_TEAM_COLORS[0].g, GOALIE_TEAM_COLORS[0].r),
+        ("team", 1, False): (TEAM_COLORS[1].b, TEAM_COLORS[1].g, TEAM_COLORS[1].r),
+        ("team", 1, True):  (GOALIE_TEAM_COLORS[1].b, GOALIE_TEAM_COLORS[1].g, GOALIE_TEAM_COLORS[1].r),
+        ("ref",):           (REF_COLOR.b, REF_COLOR.g, REF_COLOR.r),
     }
     # Puck — drawn as a CIRCLE (cv2.circle) instead of a bbox so it
     # reads as a different object class than the player rectangles.
@@ -311,25 +360,37 @@ def render(detections_data, numbers, team_of, video_path, output,
             if not boxes:
                 continue
             dets = build_detections(boxes)
-            labels = []
-            for tid in dets.tracker_id:
-                ti = int(tid)
+            a = annotators_by_key[key]
+            bg_bgr = color_bgr_by_key[key]
+            frame = a["box"].annotate(scene=frame, detections=dets)
+            frame = a["trace"].annotate(scene=frame, detections=dets)
+            # Two-line custom label per detection. Line 1 = identity
+            # (`e{eid}·t{tid}` for players, `t{tid}` for refs). Line 2
+            # = role + jersey number (`S #14`) for players, `REF` for
+            # refs. Anchored just above the bbox top-left corner; the
+            # bg uses the team colour so the bbox + label match.
+            for b in boxes:
+                ti = int(b["track_id"])
+                x1, y1, x2, y2 = b["xyxy"]
                 if key[0] == "ref":
-                    # Referee label is unambiguous; jersey number is
-                    # meaningless on refs and would just clutter.
-                    labels.append(f"t{ti} REF")
+                    line1 = f"t{ti}"
+                    line2 = "REF"
                 else:
                     role = "G" if goalie_for(ti) else "S"
                     num = jersey_for(ti)
                     num_str = f"#{num}" if num else "#??"
-                    # Label: `t{id} {G|S} #{num}` — track id always shown
-                    # so the user can call out frame-level bugs by tid.
-                    labels.append(f"t{ti} {role} {num_str}")
-            a = annotators_by_key[key]
-            frame = a["box"].annotate(scene=frame, detections=dets)
-            frame = a["label"].annotate(scene=frame, detections=dets,
-                                        labels=labels)
-            frame = a["trace"].annotate(scene=frame, detections=dets)
+                    eid = entity_of_tid.get(ti) if entity_of_tid else None
+                    # Team prefix in the label so the same number on
+                    # team 0 and team 1 reads as two distinct identities,
+                    # even if the colour rendering goes wrong on the
+                    # bbox border. Hardcoded T<id>; entity-level team_id
+                    # is the team_for() lookup we already do above.
+                    tid_team = team_for(ti)
+                    line1 = f"e{eid} - t{ti}" if eid is not None else f"t{ti}"
+                    line2 = f"{role} T{tid_team} {num_str}"
+                frame = draw_multiline_label(
+                    frame, [line1, line2], (x1, y1), bg_bgr,
+                    text_scale=0.5, text_thickness=1)
 
         # Puck — drawn as a circle (so it reads as a different object
         # class than the player rectangles). The radius is half the

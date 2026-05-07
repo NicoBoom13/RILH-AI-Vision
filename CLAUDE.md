@@ -13,13 +13,24 @@ analytics. Built from open-source modules + custom code only.
   `--training-mode` to lift that.
 - **Stage 1.b (Teams)** ✅ : team clustering via pose-based torso crop
   (YOLO pose shoulders→hips, bbox-fallback for dark jerseys). Engine
-  pluggable via `--team-engine`:
-  - `hsv` (default) — multi-point dominant color averaging (3×2 grid)
-    + per-crop k=2 k-means (HSV space). User-validated as "practically
-    perfect" on run12 except referees (HockeyAI mislabels them 'player'
-    on roller — can't filter by class_name) and dark-vs-dark teams
-    (France-Monde plateau — k-means can't separate dark-blue from
-    dark-green torsos with colour alone).
+  pluggable in two modes:
+  - **Single-engine** (`--team-engine X`, legacy): one engine, output
+    `team_id` + `vote_confidence` per track.
+  - **Multi-engine** (`--team-engines hsv,contrastive,siglip`, new): every
+    listed engine runs, labels are aligned via overlap-argmax to engine[0],
+    each track gets a `team_votes` array `[{engine, team_id, confidence}, …]`
+    plus a `team_id_best` (max-conf) summary and a `team_consensus` ratio
+    (fraction of engines agreeing with best). The multi-engine prior is
+    a **soft** signal downstream — Stage 3.a treats cross-team pairs with
+    a penalty rather than a hard reject, so a strong appearance/OCR
+    signal can still correct a single mis-classified engine.
+  Available engines:
+  - `hsv` — multi-point dominant color averaging (3×2 grid) + per-crop
+    k=2 k-means (HSV space). User-validated as "practically perfect" on
+    run12 except referees (HockeyAI mislabels them 'player' on roller —
+    can't filter by class_name) and dark-vs-dark teams (France-Monde
+    plateau — k-means can't separate dark-blue from dark-green torsos
+    with colour alone).
   - `osnet` — k=2 on per-track OSNet x0_25 medoid embeddings (same
     model Stage 3.a uses for entity Re-ID). Captures pattern + colour,
     so it tends to beat HSV on similar-coloured teams.
@@ -71,6 +82,14 @@ analytics. Built from open-source modules + custom code only.
   truth tracks: recall 55–58 % → **81–84 %** ; precision 63–68 % →
   **95–96 %**. Names are not identified — PARSeq Hockey is digit-only;
   a name fine-tune is a separate later step.
+  **Team-aware namespacing** (since 2026-05-07): when Stage 1.b's
+  `p1_b_teams.json` is available, Stage 1.c reads it and tags each
+  track's record with `team_id` + `team_vote_confidence`. The internal
+  `merge_tracks_by_number` then groups by `(team_id, jersey_number)`
+  instead of just `jersey_number` so `T0#14` and `T1#14` stay as two
+  distinct identities. Pass `--teams-json <path>` to override; the
+  default auto-discovers `p1_b_teams.json` next to the detections JSON.
+  Falls back to jersey-only grouping when no teams file is found.
 - **Stage 2.a (Rink calibration)** 🚧 HIGH PRIORITY (was Phase 3, promoted).
   HockeyRink keypoints don't transfer to roller rinks off the shelf —
   the model recognises "a rink" but collapses all 56 keypoints into a
@@ -86,20 +105,37 @@ analytics. Built from open-source modules + custom code only.
   **Re-ID clustering** that collapses fragmented Phase 1 tracks into
   stable entities (one entity = one real player / goalie). Uses OSNet
   x0_25 (via `torchreid`) medoid embedding per track + greedy merge
-  under **same-team constraint** (from Stage 1.b), **strict temporal
-  non-overlap**, and **OCR bonus** (from Stage 1.c). OCR conflicts are
-  a hard block. Output: `p3_a_entities.json`, consumed by Stage 3.b
-  (annotate), Phase 4 (events), and Phase 5 (stats). On run12 (250
-  tracks → 40 entities), run13 (167 tracks → 24 entities). Doesn't
-  replace the tracker — it post-processes its output. Entity-level
-  `is_goaltender` is weighted by frame coverage to absorb HockeyAI
-  class flips. Design doc: `docs/p3_a_entities_design.md`.
+  under **soft same-team penalty** (Stage 1.b is a prior, not a lock —
+  cross-team pairs lose `cross_team_penalty=0.30` from their weight
+  rather than being hard-rejected, so a strong OCR bonus +10 or sim
+  ~0.85 still carries the merge), **near-zero temporal overlap**
+  (`max_overlap_frames=2`, was strict 0 — absorbs the 1-frame box
+  collision artefact during scrums), and **team-aware OCR bonus / conflict**
+  (same number with same team → +10 bonus; same number cross-team →
+  no bonus; different numbers same team → hard reject). Output:
+  `p3_a_entities.json`, consumed by Stage 3.b (annotate), Phase 4
+  (events), and Phase 5 (stats). On run12 (250 tracks → 40 entities),
+  run13 (167 tracks → 24 entities). Doesn't replace the tracker — it
+  post-processes its output.
+  **Weighted multi-engine voting** (since 2026-05-07): per-entity
+  decisions aggregate every team_vote of every engine across every
+  member track, weighted by `track_frames × engine_confidence`. Winner
+  becomes the entity team_id, propagated visually via `entity_for_tid`
+  in Stage 3.b. Output JSON gains `team_score` + `jersey_score` (in
+  [0,1]) + `identity` (`T{team}#{num}`) per entity. Entity-level
+  `is_goaltender` stays weighted by frame coverage to absorb HockeyAI
+  class flips. Default `samples_per_track=15` (was 8 — more stable
+  medoid). Design doc: `docs/p3_a_entities_design.md`.
 - **Stage 3.b (Annotate)** ✅ (was Stage 1.e). Final MP4 with team-
-  coloured boxes, per-track label `t{id} {G|S} #NN` (track id always
-  shown), short traces. Goalkeepers render with their team colour
-  × 0.55 (darker green / darker blue) so the role reads at a glance
-  without breaking the team side. Referees (when Stage 1.b ran with
-  `--ref-classifier`) render in **black** with `t{id} REF` label.
+  coloured boxes, **2-line hybrid label** (since 2026-05-07): line 1
+  `e{eid} - t{tid}` (entity id stays stable across tracker fragments,
+  track id stays for frame-level debugging) ; line 2 `S T{team} #NN`
+  (role G/S, team-namespaced jersey number). Falls back to `t{tid}`
+  on line 1 + `S T{team} #NN` on line 2 when Stage 3.a hasn't run.
+  Refs render `t{tid}` + `REF` on a black background. Labels are
+  drawn with a custom multi-line renderer (supervision's
+  `LabelAnnotator` collapses newlines into a single line). Goalkeepers
+  render with their team colour × 0.55 (darker green / darker blue).
   Puck is drawn as a **circle** (cv2.circle, dark gray) instead of a
   bbox so it reads as a different object class than the players. When
   Stage 1.a ran with sub-sampled detection (`--detect-fps < source_fps`),
@@ -141,16 +177,23 @@ are services / infra that live outside the per-run pipeline.
 
 Each phase decomposes into one or more stages, named `pN_x_*.py`:
 
-**Phase 1 — Detect & track** (3 stages, sequential):
+**Phase 1 — Detect & track** (3 stages, fully sequential since
+2026-05-07 — `1.b` writes `p1_b_teams.json` then `1.c` reads it for
+team-aware OCR namespacing):
 
 1. `src/p1_a_detect.py` → `p1_a_detections.json` (per-frame bboxes, class IDs,
    persistent track IDs). HockeyAI YOLO + ByteTrack. Match-mode default
    keeps top-1 puck per frame; pass `--training-mode` for drills.
-2. `src/p1_b_teams.py` → `p1_b_teams.json` + `teams_preview.png`: team_id
-   (0/1) per player track via k=2 on pose-based torso color.
-3. `src/p1_c_numbers.py` → `p1_c_numbers.json`: per-track jersey number via
+2. `src/pose_cache.py` → `p1_pose_cache.pkl` : pose pre-extract shared
+   by 1.b + 1.c (one YOLO-pose pass instead of two).
+3. `src/p1_b_teams.py` → `p1_b_teams.json` + `teams_preview.png`: per-track
+   team prior (single or multi-engine via `--team-engine{,s}`). Output
+   carries `team_votes` array (multi-engine) + `team_id_best` summary.
+4. `src/p1_c_numbers.py` → `p1_c_numbers.json`: per-track jersey number via
    YOLO pose + PARSeq (`--parseq-checkpoint models/parseq_hockey_rilh.pt`
-   for our RILH-fine-tuned model). Crop is Koshkina-style.
+   for our RILH-fine-tuned model). Crop is Koshkina-style. Reads
+   `p1_b_teams.json` (auto-discovers, or `--teams-json <path>`) so
+   `merged_groups` are keyed by `(team_id, jersey_number)`.
 
 **Phase 2 — Rink calibration** (1 stage, high priority):
 
@@ -475,6 +518,91 @@ legend in `graphify-out/graphify.md` (PDF: `graphify-out/graphify.pdf`).
 
 Condensed: only the runs cross-referenced from this file (status, design choices, limitations). Full per-run journal — including iterations that got reverted or were stepping stones to a kept run — lives in `docs/experiments.md`.
 
+- **2026-05-07 multi-engine teams + soft same-team + label hybrid** —
+  major Phase 1.b/1.c/3.a refactor sparked by Video 09 (Training Gegen
+  Left, 1min07 @ 60fps, 4033 frames) where team classification was
+  visibly mediocre and tracker fragmentation made the annotated.mp4
+  unreadable.
+  1. **Stage 1.b multi-engine prior** — new `--team-engines hsv,contrastive`
+     CLI runs every listed engine, aligns 0/1 labels via overlap-argmax,
+     outputs `team_votes` array per track + `team_id_best` (max-conf) +
+     `team_consensus` ratio. Output JSON v4 (back-compat fields kept for
+     downstream consumers reading the older single-engine format).
+  2. **Stage 1.c team-aware OCR namespacing** — Stage 1.c now reads
+     `p1_b_teams.json` (auto-discovers, or `--teams-json <path>`) and
+     groups `merged_groups` by `(team_id, jersey_number)`. T0#14 and
+     T1#14 stay as two distinct identities. Required Stage 1.b → 1.c
+     to run **sequentially** (was parallel) — the perf hit is partially
+     absorbed by faster Stage 3.a.
+  3. **Stage 3.a soft same-team penalty** — `if ta != tb: continue`
+     replaced by `w -= cross_team_penalty=0.30`. Stage 1.b is now a
+     prior, not a lock: a strong OCR (+10) or apparence (~0.85) signal
+     can carry a cross-team merge, but weak appearance edges drop below
+     threshold and stay rejected. OCR conflict is now team-aware (same
+     number cross-team is intentionally NOT a conflict).
+  4. **Stage 3.a weighted multi-engine vote at entity level** — winning
+     team_id = argmax over (members × engines) of
+     `track_frames × engine_confidence`. Same scheme for jersey number
+     (member frames × OCR confidence). Output JSON gains `team_score`,
+     `jersey_score`, `identity` (`T{team}#{num}`) per entity.
+  5. **Stage 3.b 2-line hybrid label** — line 1 `e{eid} - t{tid}`
+     (entity stays stable across tracker fragmentation, track id stays
+     for frame-level debugging), line 2 `S T{team} #NN`. Custom multi-
+     line renderer because supervision's `LabelAnnotator` collapses
+     newlines.
+  6. **Tighter defaults**: `--imgsz` 1280 → 1920 (better puck recall),
+     Stage 3.a `samples_per_track` 8 → 15 (more stable medoid),
+     `max_overlap_frames` 0 → 2 (absorb 1-frame box collisions in
+     scrums), `team_conf_floor` 0.67 → 0.50 (vote handles low-conf).
+  7. **`p1_a_detections.json` finally `indent=2`** like every other
+     Stage output (was `json.dump(...)` single-line, the only outlier).
+
+  **Bench results on Video 09** (118 player tracks, 4033 source frames):
+
+  | run  | tracker          | pose       | team engine        | wall-clock | entities | numbered tracks | unique numbers |
+  |------|------------------|------------|--------------------|-----------:|---------:|----------------:|---------------:|
+  | run33 | bytetrack        | yolo26l-pose | contrastive (single, old pipeline) | 2007s | 16 | 2 groups | #13 #14 |
+  | run34 | bytetrack_tuned  | yolo26l-pose | contrastive (single, old pipeline) | 11588s ⚠ | 16 | 3 groups | #13 #14 |
+  | run35 | bytetrack        | yolo26l-pose | contrastive (single, **new pipeline**) | 2008s | **13** | 7 tracks / 2 groups | #8 #13 #14 #32 |
+  | run36 | bytetrack        | **yolo26n-pose** | contrastive (single, new pipeline) | **1856s** | 13 | **9 tracks / 3 groups** | **#4 #8 #13 #14 #32** |
+  | run37 | bytetrack        | yolo26l-pose | **multi-engine contrastive+hsv** (new pipeline) | (artefact) | 13 | 7 tracks / 2 groups | #8 #13 #14 #32 |
+
+  Findings:
+  - **New pipeline gains**: run33 → run35 = -19 % entities (16 → 13),
+    +5 numbers discovered (2 → 7 tracks, +#8 +#32), wall-clock equal
+    (2008s vs 2007s) despite losing the b∥c parallelism. Soft penalty
+    + max_overlap=2 + samples 15 absorbs more fragments.
+  - **Pose nano wins**: run36 vs run35 — yolo26n-pose is **faster
+    (-7.6 % wall-clock, -64 % pose-cache time) AND finds more numbers
+    (+2 tracks, +1 unique #4)** than yolo26l-pose. Probably the nano
+    has more lenient torso keypoints → more back-facing samples →
+    more OCR votes confident enough to clear the ≥2-vote threshold.
+  - **Multi-engine gives nothing on Video 09**: contrastive and HSV
+    disagree on 47/118 tracks (40 %) but `team_id_best` = max-conf
+    almost always picks contrastive (its confidences are 0.95-1.0
+    while HSV is 0.6-0.8) → run37 = run35 in every output. **The
+    confidence calibration between engines is the missing piece** —
+    raw max-confidence voting amplifies whichever engine is most
+    over-confident, not the most accurate. Next step is to either
+    rank engines by their bench accuracy or normalise per-engine
+    confidence distributions before voting.
+  - **bytetrack_tuned (run34) does cut tracks 118 → 72 (-39 %)**
+    but the wall-clock blew up x5.8 (likely external load /
+    thermal — would expect ~+15 % at most). Not promoted as default
+    until a clean re-run is repeated on a 2nd clip.
+
+  **Decisions kept**:
+  - New pipeline (multi-engine + soft penalty + hybrid label) =
+    on by default.
+  - `bytetrack default` stays the orchestrator default (no
+    promotion of `bytetrack_tuned` yet).
+  - `yolo26l-pose` stays the documented default; `yolo26n-pose`
+    looks better on Video 09 — pending validation on 2-3 more clips
+    before flipping.
+  - `--team-engine contrastive` stays the recommended single-engine
+    config; multi-engine is documented but parked until confidence
+    calibration is implemented.
+
 - **2026-05-04 perf + visuals + graphParams3D** — three concurrent improvements:
   1. **Pipeline perf −40 %** (run30 → run31 on equivalent 60s @ 60fps clip).
      New `--detect-fps` flag (default 30) on Stage 1.a + orchestrator pass-
@@ -747,27 +875,26 @@ multi-semaines (Phase 4+ et plateformes externes), voir la "Roadmap" en dessous.
 - **Pipeline data → fine-tune HockeyRink** (transfer learning depuis le
   HockeyRink ice puisque la topologie de keypoints est identique). — M
 
-### Phase 1 — Court terme
-- **Cache pose entre Stage 1.b et Stage 1.c** : aujourd'hui yolo26l-pose
-  tourne 2× sur les mêmes frames. Écrire `pose_cache.json` en Stage 1.b
-  et le lire en Stage 1.c sauve ~20-30 % wall-clock pipeline. — S
-- **Stage 1.b + Stage 1.c en parallèle** (processus séparés). Gain
-  ~10-20 % supplémentaire (overlap GPU/CPU). — S
-
 ### Phase 1 / Phase 3 — Court-moyen terme
-- **Annoter `track_truth.json` sur run24-run29** via `tools/annotate_tracks.py`
-  (UI localhost, ~250 tracks à passer en A/B/Ref/X) puis lancer
-  `tools/bench_team_engines.py` pour comparer hsv / osnet / siglip / contrastive
-  + ref classifier. Donne la première mesure factuelle sur **nos** vidéos
-  pour décider quel engine devient le défaut Stage 1.b. — S
-- **Train `models/ref_classifier_rilh.pt`** une fois track_truth.json existe
-  (`tools/finetune_ref_classifier.py`). Solve le ref-leak indépendamment
-  de Phase 2. — XS (entraînement) après l'annotation
-- **Train `models/contrastive_team_rilh.pt`** sur le même truth set
-  (`tools/finetune_contrastive_team.py`, ~30 epochs CPU). — S
-- **Vote temporel team entité-level seul** comme quick-win complémentaire :
-  mode des `team_id` des membres d'une entité au lieu de
-  `next(iter(team_ids))` non-déterministe. — S
+- **Calibrer les confidences inter-engines** avant le vote multi-engine
+  (run37 a montré que max-conf wins amplifie l'engine le plus
+  over-confident, pas le plus précis). Options : normaliser par engine
+  via la distribution Z-score, ou pondérer par l'accuracy mesurée au
+  bench. Sans ça le multi-engine = single-engine. — S
+- **Annoter Video 09 dans `track_truth.json`** + retrain
+  `contrastive_team_rilh.pt` sur 7 vidéos (track_truth.json existant
+  couvre run24-run29). Effet attendu : Stage 1.b plus précis sur
+  Video 09 (training Gegen) qui fait actuellement diverger contrastive
+  vs hsv sur ~40 % des tracks. — S
+- **Tuner threshold sigmoïde du ref classifier** (actuellement 0.5,
+  cible 0.85) pour passer de precision 0.10 (in-bench) à ~0.50 sans
+  perdre trop de recall. — XS
+- **Promouvoir `yolo26n-pose.pt` comme défaut** (run35 vs run36 sur
+  Video 09 : −7.6 % wall-clock, +28 % de numéros découverts vs
+  yolo26l-pose). À valider sur 2-3 vidéos supplémentaires avant de
+  flipper le défaut dans `run_project.py`. — XS
+- **Bench multi-engine vs single-engine** (run37 en cours) sur Video 09
+  pour mesurer le gain effectif du soft same-team prior. — XS
 - **WBF (Weighted Boxes Fusion)** ensemble palet HockeyAI + détecteur
   dédié (style sieve-data). Gain attendu couverture palet 42% → 55–65%.
   Plus utile *après* fine-tune Phase 4. — M
@@ -800,8 +927,12 @@ Six headlines; per-chantier scope, blockers, target metrics, and the surrounding
   only useful when iterating fast and puck quality doesn't matter.
 - Camera too slow in Stage 2.a → raise `--alpha`. Camera jittery → lower it,
   or raise `--polish-window`.
-- Still missing puck detections → `--imgsz 1280` or 1536 (slower but much
-  better on small objects).
+- Default `--imgsz` is **1920** (was 1280 until 2026-05-06) — kept the
+  high default since user-facing reports still flagged missing pucks.
+  Pose-pre-extract is only ~7-8 % slower at 1920 vs 1280; the YOLO
+  detection cost grows ~+50 % but puck recall improves visibly.
+  Drop to 1280/1536 if you want to iterate faster and don't care about
+  small objects.
 - Use `--debug-overlay` (Stage 2.a) to understand the focus trajectory.
 - Tracker comparisons: pass `--tracker configs/bytetrack_tuned.yaml` or
   `configs/botsort_reid.yaml`. BoT-SORT+ReID is ~same speed as ByteTrack
